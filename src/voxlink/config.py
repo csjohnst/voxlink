@@ -28,6 +28,7 @@ class ServerConfig:
     host: str = "localhost"
     port: int = 64738
     username: str = "VoxLinkUser"
+    auto_connect: bool = False
 
 
 @dataclass
@@ -56,6 +57,7 @@ class PTTConfig:
 class UIConfig:
     """User interface settings."""
 
+    theme: str = "auto"  # "auto", "dark", "light"
     start_minimized: bool = False
     show_tray_icon: bool = True
     compact_mode: bool = False

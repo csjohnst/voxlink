@@ -42,8 +42,9 @@ def run_app(config_path: str | None = None) -> int:
     if _ICON_PATH.exists():
         app.setWindowIcon(QIcon(str(_ICON_PATH)))
 
-    # Set Fluent theme before creating any widgets
-    setTheme(Theme.AUTO)
+    # Set Fluent theme from config before creating any widgets
+    _THEME_MAP = {"dark": Theme.DARK, "light": Theme.LIGHT, "auto": Theme.AUTO}
+    setTheme(_THEME_MAP.get(config.ui.theme, Theme.AUTO))
     setThemeColor(QColor("#4ade80"))
 
     # Import here to avoid circular imports and ensure QApplication exists
@@ -183,6 +184,13 @@ def run_app(config_path: str | None = None) -> int:
 
     if config.ui.show_tray_icon:
         tray_icon.show()
+
+    # Auto-connect if configured and server host is set
+    if config.server.auto_connect and config.server.host != "localhost":
+        logger.info("Auto-connecting to %s:%d as %s",
+                     config.server.host, config.server.port, config.server.username)
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(500, lambda: mumble_client.connect_to_server())
 
     # Graceful shutdown
     def _shutdown() -> None:

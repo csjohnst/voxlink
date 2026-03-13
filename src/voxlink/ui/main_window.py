@@ -6,7 +6,6 @@ import logging
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QSettings, QTimer, Qt
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QSplitter,
 )
@@ -15,8 +14,8 @@ from qfluentwidgets import (
     TextEdit, LineEdit, SpinBox,
     SubtitleLabel, BodyLabel,
     MessageBox,
-    setTheme, Theme, InfoBar, InfoBarPosition,
-    SimpleCardWidget, setThemeColor,
+    InfoBar, InfoBarPosition,
+    SimpleCardWidget,
 )
 from qfluentwidgets.components.dialog_box.message_box_base import MessageBoxBase
 
@@ -141,10 +140,6 @@ class MainWindow(FluentWindow):
         self._is_muted = False
         self._is_deafened = False
 
-        # Set theme
-        setTheme(Theme.AUTO)
-        setThemeColor(QColor("#4ade80"))
-
         # Setup
         self.setWindowTitle("VoxLink")
         self.setMinimumSize(700, 500)
@@ -199,6 +194,10 @@ class MainWindow(FluentWindow):
         )
 
         self._restore_geometry()
+
+        # Apply compact mode from config
+        if config.ui.compact_mode:
+            self.navigationInterface.setExpandWidth(48)
 
     # ---- Properties for external wiring ----
 

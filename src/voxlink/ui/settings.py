@@ -23,7 +23,6 @@ from qfluentwidgets import (
     SpinBox,
     setTheme,
     Theme,
-    isDarkTheme,
     InfoBar,
     InfoBarPosition,
 )
@@ -331,22 +330,36 @@ class SettingsPage(ScrollArea):
         port_layout.addWidget(self._port_spin)
         self._layout.addWidget(self._port_card)
 
+        # Auto-connect
+        self._autoconnect_card = SimpleCardWidget()
+        ac_layout = QHBoxLayout(self._autoconnect_card)
+        ac_layout.setContentsMargins(16, 8, 16, 8)
+        ac_layout.addWidget(BodyLabel("Auto-connect on startup"))
+        ac_layout.addStretch()
+        self._autoconnect_switch = SwitchButton()
+        ac_layout.addWidget(self._autoconnect_switch)
+        self._layout.addWidget(self._autoconnect_card)
+
     # ---- General Group ----
 
     def _create_general_group(self) -> None:
         self._general_label = SubtitleLabel("General")
         self._layout.addWidget(self._general_label)
 
-        # Dark mode
-        self._dark_card = SimpleCardWidget()
-        dark_layout = QHBoxLayout(self._dark_card)
-        dark_layout.setContentsMargins(16, 8, 16, 8)
-        dark_layout.addWidget(BodyLabel("Dark Mode"))
-        dark_layout.addStretch()
-        self._dark_switch = SwitchButton()
-        self._dark_switch.checkedChanged.connect(self._on_dark_mode_toggled)
-        dark_layout.addWidget(self._dark_switch)
-        self._layout.addWidget(self._dark_card)
+        # Theme
+        self._theme_card = SimpleCardWidget()
+        theme_layout = QHBoxLayout(self._theme_card)
+        theme_layout.setContentsMargins(16, 8, 16, 8)
+        theme_layout.addWidget(BodyLabel("Theme"))
+        theme_layout.addStretch()
+        self._theme_combo = ComboBox()
+        self._theme_combo.addItems(["System", "Dark", "Light"])
+        self._theme_combo.setMinimumWidth(200)
+        self._theme_combo.currentTextChanged.connect(self._on_theme_changed)
+        theme_layout.addWidget(self._theme_combo)
+        self._layout.addWidget(self._theme_card)
+        self._theme_map = {"System": "auto", "Dark": "dark", "Light": "light"}
+        self._theme_reverse = {v: k for k, v in self._theme_map.items()}
 
         # Start minimized
         self._minimized_card = SimpleCardWidget()
@@ -375,6 +388,7 @@ class SettingsPage(ScrollArea):
         compact_layout.addWidget(BodyLabel("Compact Mode"))
         compact_layout.addStretch()
         self._compact_switch = SwitchButton()
+        self._compact_switch.checkedChanged.connect(self._on_compact_toggled)
         compact_layout.addWidget(self._compact_switch)
         self._layout.addWidget(self._compact_card)
 
@@ -425,9 +439,13 @@ class SettingsPage(ScrollArea):
         self._username_edit.setText(cfg.server.username)
         self._host_edit.setText(cfg.server.host)
         self._port_spin.setValue(cfg.server.port)
+        self._autoconnect_switch.setChecked(cfg.server.auto_connect)
 
         # General
-        self._dark_switch.setChecked(isDarkTheme())
+        theme_text = self._theme_reverse.get(cfg.ui.theme, "System")
+        theme_idx = self._theme_combo.findText(theme_text)
+        if theme_idx >= 0:
+            self._theme_combo.setCurrentIndex(theme_idx)
         self._start_minimized_switch.setChecked(cfg.ui.start_minimized)
         self._show_tray_switch.setChecked(cfg.ui.show_tray_icon)
         self._compact_switch.setChecked(cfg.ui.compact_mode)
@@ -455,8 +473,11 @@ class SettingsPage(ScrollArea):
         port_val = self._port_spin.value()
         if port_val > 0:
             cfg.server.port = port_val
+        cfg.server.auto_connect = self._autoconnect_switch.isChecked()
 
         # General
+        theme_text = self._theme_combo.currentText()
+        cfg.ui.theme = self._theme_map.get(theme_text, "auto")
         cfg.ui.start_minimized = self._start_minimized_switch.isChecked()
         cfg.ui.show_tray_icon = self._show_tray_switch.isChecked()
         cfg.ui.compact_mode = self._compact_switch.isChecked()
@@ -470,9 +491,24 @@ class SettingsPage(ScrollArea):
 
     # ---- Event Handlers ----
 
-    def _on_dark_mode_toggled(self, checked: bool) -> None:
-        """Toggle between dark and light theme."""
-        setTheme(Theme.DARK if checked else Theme.LIGHT)
+    def _on_theme_changed(self, text: str) -> None:
+        """Apply theme selection immediately."""
+        _map = {"System": Theme.AUTO, "Dark": Theme.DARK, "Light": Theme.LIGHT}
+        setTheme(_map.get(text, Theme.AUTO))
+
+    def _on_compact_toggled(self, checked: bool) -> None:
+        """Toggle compact mode on the main window's navigation sidebar."""
+        main_win = self.window()
+        if hasattr(main_win, 'navigationInterface'):
+            nav = main_win.navigationInterface
+            if checked:
+                nav.setMinimumWidth(48)
+                nav.setExpandWidth(48)
+                nav.panel.setMinimumWidth(48)
+            else:
+                nav.setMinimumWidth(48)
+                nav.setExpandWidth(322)
+                nav.panel.setMinimumWidth(48)
 
     def _on_bind_ptt_key(self) -> None:
         """Start PTT key binding process."""

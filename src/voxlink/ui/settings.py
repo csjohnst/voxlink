@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout
 
 from qfluentwidgets import (
@@ -25,6 +25,8 @@ from qfluentwidgets import (
     setTheme,
     Theme,
     isDarkTheme,
+    InfoBar,
+    InfoBarPosition,
 )
 
 from voxlink.config import VoxLinkConfig
@@ -35,8 +37,57 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _qt_key_to_evdev_name(qt_key: int) -> str | None:
+    """Map a Qt key code to an evdev KEY_* name."""
+    from PySide6.QtCore import Qt as _Qt
+
+    # Common mappings
+    _MAP = {
+        _Qt.Key.Key_F1: "KEY_F1", _Qt.Key.Key_F2: "KEY_F2",
+        _Qt.Key.Key_F3: "KEY_F3", _Qt.Key.Key_F4: "KEY_F4",
+        _Qt.Key.Key_F5: "KEY_F5", _Qt.Key.Key_F6: "KEY_F6",
+        _Qt.Key.Key_F7: "KEY_F7", _Qt.Key.Key_F8: "KEY_F8",
+        _Qt.Key.Key_F9: "KEY_F9", _Qt.Key.Key_F10: "KEY_F10",
+        _Qt.Key.Key_F11: "KEY_F11", _Qt.Key.Key_F12: "KEY_F12",
+        _Qt.Key.Key_F13: "KEY_F13", _Qt.Key.Key_F14: "KEY_F14",
+        _Qt.Key.Key_F15: "KEY_F15", _Qt.Key.Key_F16: "KEY_F16",
+        _Qt.Key.Key_Space: "KEY_SPACE",
+        _Qt.Key.Key_CapsLock: "KEY_CAPSLOCK",
+        _Qt.Key.Key_Tab: "KEY_TAB",
+        _Qt.Key.Key_Pause: "KEY_PAUSE",
+        _Qt.Key.Key_ScrollLock: "KEY_SCROLLLOCK",
+        _Qt.Key.Key_Insert: "KEY_INSERT",
+        _Qt.Key.Key_Home: "KEY_HOME",
+        _Qt.Key.Key_End: "KEY_END",
+        _Qt.Key.Key_PageUp: "KEY_PAGEUP",
+        _Qt.Key.Key_PageDown: "KEY_PAGEDOWN",
+        _Qt.Key.Key_NumLock: "KEY_NUMLOCK",
+        _Qt.Key.Key_Control: "KEY_LEFTCTRL",
+        _Qt.Key.Key_Alt: "KEY_LEFTALT",
+        _Qt.Key.Key_Shift: "KEY_LEFTSHIFT",
+        _Qt.Key.Key_Meta: "KEY_LEFTMETA",
+    }
+
+    name = _MAP.get(qt_key)
+    if name:
+        return name
+
+    # Try letter/number keys
+    if _Qt.Key.Key_A <= qt_key <= _Qt.Key.Key_Z:
+        letter = chr(qt_key)
+        return f"KEY_{letter}"
+    if _Qt.Key.Key_0 <= qt_key <= _Qt.Key.Key_9:
+        digit = chr(qt_key)
+        return f"KEY_{digit}"
+
+    # Fallback: use the Qt key name
+    return None
+
+
 class SettingsPage(ScrollArea):
     """Settings page with fluent card-based layout."""
+
+    settings_saved = Signal()
 
     def __init__(
         self,
@@ -130,6 +181,18 @@ class SettingsPage(ScrollArea):
         ov_layout.addWidget(self._output_volume_slider)
         ov_layout.addWidget(self._output_volume_label)
         self._layout.addWidget(self._output_vol_card)
+
+        # Test audio
+        self._test_card = SimpleCardWidget()
+        test_layout = QHBoxLayout(self._test_card)
+        test_layout.setContentsMargins(16, 8, 16, 8)
+        test_layout.addWidget(BodyLabel("Test Audio"))
+        test_layout.addStretch()
+        self._test_btn = PushButton("Test")
+        self._test_btn.setMinimumWidth(100)
+        self._test_btn.clicked.connect(self._on_test_audio)
+        test_layout.addWidget(self._test_btn)
+        self._layout.addWidget(self._test_card)
 
         # Populate devices
         self._populate_devices()
@@ -399,6 +462,8 @@ class SettingsPage(ScrollArea):
         except Exception:
             logger.exception("Failed to save settings")
 
+        self.settings_saved.emit()
+
     # ---- Event Handlers ----
 
     def _on_dark_mode_toggled(self, checked: bool) -> None:
@@ -406,5 +471,123 @@ class SettingsPage(ScrollArea):
         setTheme(Theme.DARK if checked else Theme.LIGHT)
 
     def _on_bind_ptt_key(self) -> None:
-        self._ptt_key_btn.setText("Press a key...")
-        logger.info("PTT key binding requested (placeholder)")
+        """Start PTT key binding process."""
+        method = self._config.ptt.shortcut_method
+
+        if method == "portal" or method == "auto":
+            # Portal handles its own key binding UI
+            # We just need to trigger a re-bind
+            self._ptt_key_btn.setText("Waiting for portal...")
+            try:
+                from voxlink.shortcuts.portal import PortalShortcuts
+                if PortalShortcuts.is_available():
+                    # The portal will show its own dialog
+                    # We need to restart the shortcut manager to trigger BindShortcuts
+                    self._ptt_key_btn.setText("Portal binding active")
+                    InfoBar.info(
+                        "PTT Binding",
+                        "The desktop portal will show a key binding dialog. "
+                        "Press the key you want to use for Push-to-Talk.",
+                        parent=self.window(),
+                        duration=5000,
+                    )
+                    return
+            except Exception:
+                pass
+
+        # For evdev or fallback: capture next key press
+        self._ptt_key_btn.setText("Press any key...")
+        self._ptt_key_btn.setFocus()
+        self._waiting_for_key = True
+        # Install event filter to capture the next key press
+        self._ptt_key_btn.installEventFilter(self)
+
+    def eventFilter(self, obj, event) -> bool:
+        """Capture key press for PTT binding."""
+        from PySide6.QtCore import QEvent
+        if hasattr(self, '_waiting_for_key') and self._waiting_for_key:
+            if event.type() == QEvent.Type.KeyPress:
+                from PySide6.QtCore import Qt as _Qt
+                key = event.key()
+                if key in (_Qt.Key.Key_Escape,):
+                    # Cancel binding
+                    self._ptt_key_btn.setText(self._config.ptt.evdev_key or "Click to bind...")
+                    self._waiting_for_key = False
+                    self._ptt_key_btn.removeEventFilter(self)
+                    return True
+
+                # Map Qt key to evdev key name
+                key_name = _qt_key_to_evdev_name(key)
+                if key_name:
+                    self._config.ptt.evdev_key = key_name
+                    self._ptt_key_btn.setText(key_name)
+                    self._waiting_for_key = False
+                    self._ptt_key_btn.removeEventFilter(self)
+                    logger.info("PTT key bound to: %s", key_name)
+                    return True
+        return super().eventFilter(obj, event)
+
+    def _on_test_audio(self) -> None:
+        """Record 2 seconds from input and play back through output."""
+        import threading
+        from voxlink.audio.capture import FRAME_BYTES, RATE
+
+        self._test_btn.setEnabled(False)
+        self._test_btn.setText("Recording...")
+
+        input_dev = self._input_device_data.get(self._input_combo.currentText(), "")
+        output_dev = self._output_device_data.get(self._output_combo.currentText(), "")
+
+        def _run_test() -> None:
+            try:
+                from pasimple import (
+                    PaSimple,
+                    PA_STREAM_RECORD,
+                    PA_STREAM_PLAYBACK,
+                    PA_SAMPLE_S16LE,
+                )
+
+                # Record 2 seconds
+                record_stream = PaSimple(
+                    direction=PA_STREAM_RECORD,
+                    format=PA_SAMPLE_S16LE,
+                    channels=1,
+                    rate=RATE,
+                    app_name="voxlink-test",
+                    stream_name="test-capture",
+                    device_name=input_dev or None,
+                    fragsize=FRAME_BYTES,
+                )
+
+                frames: list[bytes] = []
+                num_frames = int(RATE * 2 / 960)  # 2 seconds worth
+                for _ in range(num_frames):
+                    data = record_stream.read(FRAME_BYTES)
+                    frames.append(data)
+                record_stream.close()
+
+                self._test_btn.setText("Playing...")
+
+                # Play back
+                play_stream = PaSimple(
+                    direction=PA_STREAM_PLAYBACK,
+                    format=PA_SAMPLE_S16LE,
+                    channels=1,
+                    rate=RATE,
+                    app_name="voxlink-test",
+                    stream_name="test-playback",
+                    device_name=output_dev or None,
+                )
+                for frame in frames:
+                    play_stream.write(frame)
+                play_stream.drain()
+                play_stream.close()
+
+            except Exception:
+                logger.exception("Audio test failed")
+            finally:
+                self._test_btn.setText("Test")
+                self._test_btn.setEnabled(True)
+
+        thread = threading.Thread(target=_run_test, daemon=True)
+        thread.start()

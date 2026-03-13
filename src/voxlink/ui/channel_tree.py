@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QColor, QPixmap, QPainter, QIcon, QBrush
 from PySide6.QtWidgets import QTreeWidgetItem
-from qfluentwidgets import TreeWidget, RoundMenu, Action, FluentIcon, isDarkTheme
+from qfluentwidgets import TreeWidget, RoundMenu, Action, FluentIcon, isDarkTheme, BodyLabel, Slider, MessageBox
 
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QWidget
@@ -90,6 +90,8 @@ class ChannelTree(TreeWidget):
     """
 
     channel_join_requested = Signal(int)
+    user_mute_toggled = Signal(int, bool)  # session_id, muted
+    user_volume_changed = Signal(int, float)  # session_id, volume (0.0-2.0)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -99,6 +101,8 @@ class ChannelTree(TreeWidget):
         self.itemDoubleClicked.connect(self._on_item_double_clicked)
         self.setAnimated(True)
         self.setIndentation(16)
+        self._muted_sessions: set[int] = set()
+        self._user_volumes: dict[int, float] = {}  # session -> volume multiplier
 
     def update_channels(self, channels: dict, users: dict | None = None) -> None:
         """Rebuild the channel tree from server data.
@@ -259,18 +263,77 @@ class ChannelTree(TreeWidget):
         if item is None or item.data(0, _ROLE_TYPE) != _TYPE_USER:
             return
 
+        session_id = item.data(0, _ROLE_ID)
+        if session_id is None:
+            return
+
         menu = RoundMenu(parent=self)
-        mute_action = Action(FluentIcon.MUTE, "Mute locally", parent=menu)
-        volume_action = Action(FluentIcon.VOLUME, "Adjust volume...", parent=menu)
+
+        is_muted = session_id in self._muted_sessions
+        mute_action = Action(
+            FluentIcon.MUTE if not is_muted else FluentIcon.VOLUME,
+            "Unmute locally" if is_muted else "Mute locally",
+            parent=menu,
+        )
         menu.addAction(mute_action)
+
+        volume_action = Action(FluentIcon.VOLUME, "Adjust volume...", parent=menu)
         menu.addAction(volume_action)
 
         action = menu.exec(self.viewport().mapToGlobal(pos))
         if action == mute_action:
-            logger.info(
-                "Local mute for user session=%s (placeholder)", item.data(0, _ROLE_ID)
-            )
+            if is_muted:
+                self._muted_sessions.discard(session_id)
+            else:
+                self._muted_sessions.add(session_id)
+            self.user_mute_toggled.emit(session_id, not is_muted)
+            # Update icon
+            self._update_user_mute_icon(item, not is_muted)
+
         elif action == volume_action:
-            logger.info(
-                "Volume adjust for user session=%s (placeholder)", item.data(0, _ROLE_ID)
-            )
+            self._show_volume_dialog(session_id, item)
+
+    def _update_user_mute_icon(self, item, muted: bool) -> None:
+        """Update user icon to reflect local mute state."""
+        _ensure_icons()
+        if muted:
+            item.setIcon(0, _ICON_MUTED)
+        # else restore from user data - we'd need to store it
+
+    def _show_volume_dialog(self, session_id: int, item) -> None:
+        """Show a volume adjustment dialog for a user."""
+        current_vol = self._user_volumes.get(session_id, 1.0)
+
+        # Create a simple dialog with a slider
+        dlg = MessageBox(
+            f"Volume: {item.text(0)}",
+            "",
+            self.window(),
+        )
+
+        slider = Slider(Qt.Orientation.Horizontal)
+        slider.setRange(0, 200)  # 0% to 200%
+        slider.setValue(int(current_vol * 100))
+
+        vol_label = BodyLabel(f"{int(current_vol * 100)}%")
+        slider.valueChanged.connect(lambda v: vol_label.setText(f"{v}%"))
+
+        dlg.viewLayout.addWidget(BodyLabel("Volume"))
+        dlg.viewLayout.addWidget(slider)
+        dlg.viewLayout.addWidget(vol_label)
+
+        dlg.yesButton.setText("Apply")
+        dlg.cancelButton.setText("Cancel")
+
+        if dlg.exec():
+            new_vol = slider.value() / 100.0
+            self._user_volumes[session_id] = new_vol
+            self.user_volume_changed.emit(session_id, new_vol)
+
+    def is_user_muted(self, session_id: int) -> bool:
+        """Check if a user is locally muted."""
+        return session_id in self._muted_sessions
+
+    def get_user_volume(self, session_id: int) -> float:
+        """Get per-user volume multiplier (default 1.0)."""
+        return self._user_volumes.get(session_id, 1.0)

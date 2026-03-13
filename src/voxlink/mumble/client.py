@@ -69,6 +69,7 @@ class MumbleClient(QObject):
 
     state_changed = Signal(ConnectionState)
     audio_received = Signal(bytes)
+    audio_received_from_user = Signal(int, bytes)  # session_id, pcm_data
 
     # Auto-reconnect settings
     _RECONNECT_BASE = 1.0    # seconds
@@ -232,8 +233,10 @@ class MumbleClient(QObject):
         pymumble provides decoded PCM: 48kHz, 16-bit signed, mono.
         """
         pcm = soundchunk.pcm
+        session = getattr(user, 'session', 0)
         self.events.emit_audio_received(pcm)
-        self.audio_received.emit(pcm)
+        self.audio_received.emit(pcm)  # keep for backward compat
+        self.audio_received_from_user.emit(session, pcm)
 
     # ---- Reconnection logic ----
 

@@ -86,9 +86,32 @@ def run_app(config_path: str | None = None) -> int:
     # Wire capture level to status bar input meter
     capture_manager.level_changed.connect(main_window.status_bar_widget.set_input_level)
 
-    # Wire audio pipeline
-    capture_manager.audio_captured.connect(mumble_client.send_audio)
-    mumble_client.audio_received.connect(playback_manager.play)
+    # Wire audio pipeline through filter functions that respect mute/deafen
+    def _send_audio_if_not_muted(pcm_data: bytes) -> None:
+        if not main_window._is_muted:
+            mumble_client.send_audio(pcm_data)
+
+    def _play_audio_if_not_deafened(pcm_data: bytes) -> None:
+        if not main_window._is_deafened:
+            playback_manager.play(pcm_data)
+
+    def _play_audio_filtered(session_id: int, pcm_data: bytes) -> None:
+        if main_window._is_deafened:
+            return
+        if main_window.channel_tree.is_user_muted(session_id):
+            return
+        vol = main_window.channel_tree.get_user_volume(session_id)
+        if vol != 1.0:
+            # Apply volume scaling
+            import struct
+            n_samples = len(pcm_data) // 2
+            samples = struct.unpack(f"<{n_samples}h", pcm_data)
+            scaled = [max(-32768, min(32767, int(s * vol))) for s in samples]
+            pcm_data = struct.pack(f"<{n_samples}h", *scaled)
+        playback_manager.play(pcm_data)
+
+    capture_manager.audio_captured.connect(_send_audio_if_not_muted)
+    mumble_client.audio_received_from_user.connect(_play_audio_filtered)
 
     # Wire mumble events to UI
     mumble_client.events.connected.connect(main_window.on_connected)
@@ -112,6 +135,22 @@ def run_app(config_path: str | None = None) -> int:
     tray_icon.deafen_action.toggled.connect(main_window.status_bar_widget.set_deafened)
     tray_icon.disconnect_action.triggered.connect(mumble_client.disconnect)
     tray_icon.quit_action.triggered.connect(app.quit)
+
+    # Connect settings saved signal to update managers
+    def _on_settings_saved() -> None:
+        # Update audio devices if changed
+        capture_manager.set_device(config.audio.input_device)
+        playback_manager.set_device(config.audio.output_device)
+        # Refresh tray icon visibility
+        if config.ui.show_tray_icon:
+            tray_icon.show()
+        else:
+            tray_icon.hide()
+
+    main_window._settings_page.settings_saved.connect(_on_settings_saved)
+
+    # Start playback manager so it's ready to receive audio
+    playback_manager.start()
 
     # Start device monitoring
     device_manager.refresh()

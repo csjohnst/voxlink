@@ -20,6 +20,7 @@ from qfluentwidgets import (
 from qfluentwidgets.components.dialog_box.message_box_base import MessageBoxBase
 
 from voxlink.ui.channel_tree import ChannelTree
+from voxlink.ui.compact_overlay import CompactOverlay
 from voxlink.ui.status_bar import StatusBar
 
 if TYPE_CHECKING:
@@ -139,6 +140,8 @@ class MainWindow(FluentWindow):
         self._tray_icon = None
         self._is_muted = False
         self._is_deafened = False
+        self._compact_overlay = CompactOverlay()
+        self._compact_overlay.restore_requested.connect(self._restore_from_compact)
 
         # Setup
         self.setWindowTitle("VoxLink")
@@ -183,6 +186,16 @@ class MainWindow(FluentWindow):
             position=NavigationItemPosition.BOTTOM,
         )
 
+        # Compact mode toggle in nav
+        self.navigationInterface.addItem(
+            routeKey="compact",
+            icon=FluentIcon.MINIMIZE,
+            text="Compact",
+            onClick=self._enter_compact_mode,
+            selectable=False,
+            position=NavigationItemPosition.BOTTOM,
+        )
+
         # About in bottom nav
         self.navigationInterface.addItem(
             routeKey="about",
@@ -195,10 +208,6 @@ class MainWindow(FluentWindow):
 
         self._restore_geometry()
 
-        # Apply compact mode from config
-        if config.ui.compact_mode:
-            self.navigationInterface.setExpandWidth(48)
-
     # ---- Properties for external wiring ----
 
     @property
@@ -208,6 +217,10 @@ class MainWindow(FluentWindow):
     @property
     def status_bar_widget(self) -> StatusBar:
         return self._server_page.status_bar
+
+    @property
+    def compact_overlay(self) -> CompactOverlay:
+        return self._compact_overlay
 
     def set_tray_icon(self, tray_icon) -> None:
         """Store reference to tray icon for minimize-to-tray behavior."""
@@ -244,6 +257,7 @@ class MainWindow(FluentWindow):
         self._server_page.channel_tree.clear()
         self._server_page.channel_tree.setHeaderLabel("Channels")
         self._server_page.info_area.append("Disconnected from server.")
+        self._compact_overlay.clear_users()
 
     def on_error(self, message: str) -> None:
         """Handle connection error."""
@@ -262,15 +276,20 @@ class MainWindow(FluentWindow):
     def on_user_joined(self, user_data: dict) -> None:
         """Handle user joining."""
         name = user_data.get("name", "Unknown")
+        session = user_data.get("session")
         self._server_page.info_area.append(f"User joined: {name}")
-        # Full refresh to ensure channel tree is up-to-date
         self._refresh_tree()
+        if session is not None:
+            self._compact_overlay.add_user(session, name)
 
     def on_user_left(self, user_data: dict) -> None:
         """Handle user leaving."""
         name = user_data.get("name", "Unknown")
+        session = user_data.get("session")
         self._server_page.info_area.append(f"User left: {name}")
         self._server_page.channel_tree.remove_user(user_data)
+        if session is not None:
+            self._compact_overlay.remove_user(session)
 
     # ---- Actions ----
 
@@ -312,6 +331,22 @@ class MainWindow(FluentWindow):
     def _toggle_deafen(self) -> None:
         self._is_deafened = not self._is_deafened
         self._server_page.status_bar.set_deafened(self._is_deafened)
+
+    def _enter_compact_mode(self) -> None:
+        """Switch to compact floating overlay."""
+        self._save_geometry()
+        self.hide()
+        # Sync current users to overlay
+        users = self._mumble_client.get_users()
+        self._compact_overlay.set_users(users)
+        self._compact_overlay.show()
+
+    def _restore_from_compact(self) -> None:
+        """Restore from compact overlay to full window."""
+        self._compact_overlay.hide()
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
     def _on_mute_toggled(self, muted: bool) -> None:
         self._is_muted = muted

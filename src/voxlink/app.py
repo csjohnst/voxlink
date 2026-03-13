@@ -134,8 +134,10 @@ def run_app(config_path: str | None = None) -> int:
         _play_audio_filtered, Qt.ConnectionType.DirectConnection)
 
     # Wire talking indicator (queued to main thread for UI safety)
-    mumble_client.audio_received_from_user.connect(
-        lambda session_id, pcm_data: main_window.channel_tree.set_user_talking(session_id))
+    def _on_user_audio(session_id: int, pcm_data: bytes) -> None:
+        main_window.channel_tree.set_user_talking(session_id)
+        main_window.compact_overlay.set_user_talking(session_id)
+    mumble_client.audio_received_from_user.connect(_on_user_audio)
 
     # Wire mumble events to UI
     mumble_client.events.connected.connect(main_window.on_connected)

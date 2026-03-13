@@ -381,16 +381,6 @@ class SettingsPage(ScrollArea):
         tray_layout.addWidget(self._show_tray_switch)
         self._layout.addWidget(self._tray_card)
 
-        # Compact mode
-        self._compact_card = SimpleCardWidget()
-        compact_layout = QHBoxLayout(self._compact_card)
-        compact_layout.setContentsMargins(16, 8, 16, 8)
-        compact_layout.addWidget(BodyLabel("Compact Mode"))
-        compact_layout.addStretch()
-        self._compact_switch = SwitchButton()
-        self._compact_switch.checkedChanged.connect(self._on_compact_toggled)
-        compact_layout.addWidget(self._compact_switch)
-        self._layout.addWidget(self._compact_card)
 
     # ---- Actions ----
 
@@ -448,7 +438,6 @@ class SettingsPage(ScrollArea):
             self._theme_combo.setCurrentIndex(theme_idx)
         self._start_minimized_switch.setChecked(cfg.ui.start_minimized)
         self._show_tray_switch.setChecked(cfg.ui.show_tray_icon)
-        self._compact_switch.setChecked(cfg.ui.compact_mode)
 
     def _apply_settings(self) -> None:
         """Write widget values back to config."""
@@ -480,7 +469,6 @@ class SettingsPage(ScrollArea):
         cfg.ui.theme = self._theme_map.get(theme_text, "auto")
         cfg.ui.start_minimized = self._start_minimized_switch.isChecked()
         cfg.ui.show_tray_icon = self._show_tray_switch.isChecked()
-        cfg.ui.compact_mode = self._compact_switch.isChecked()
 
         try:
             cfg.save()
@@ -496,19 +484,6 @@ class SettingsPage(ScrollArea):
         _map = {"System": Theme.AUTO, "Dark": Theme.DARK, "Light": Theme.LIGHT}
         setTheme(_map.get(text, Theme.AUTO))
 
-    def _on_compact_toggled(self, checked: bool) -> None:
-        """Toggle compact mode on the main window's navigation sidebar."""
-        main_win = self.window()
-        if hasattr(main_win, 'navigationInterface'):
-            nav = main_win.navigationInterface
-            if checked:
-                nav.setMinimumWidth(48)
-                nav.setExpandWidth(48)
-                nav.panel.setMinimumWidth(48)
-            else:
-                nav.setMinimumWidth(48)
-                nav.setExpandWidth(322)
-                nav.panel.setMinimumWidth(48)
 
     def _on_bind_ptt_key(self) -> None:
         """Start PTT key binding process."""

@@ -189,8 +189,8 @@ def run_app(config_path: str | None = None) -> int:
     if config.ui.show_tray_icon:
         tray_icon.show()
 
-    # Auto-connect if configured and server host is set
-    if config.server.auto_connect and config.server.host != "localhost":
+    # Auto-connect if configured
+    if config.server.auto_connect and config.server.host:
         logger.info("Auto-connecting to %s:%d as %s",
                      config.server.host, config.server.port, config.server.username)
         from PySide6.QtCore import QTimer

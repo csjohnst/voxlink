@@ -1,11 +1,16 @@
-"""Mumble server client wrapping pymumble."""
+"""Mumble server client wrapping pymumble 2.0 (sourcehut fork)."""
 
 from __future__ import annotations
 
 import enum
 import logging
+import sys
+import threading
+import time
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
+
+import mumble as pymumble
 
 from voxlink.config import ServerConfig
 from voxlink.mumble.events import MumbleEvents
@@ -22,6 +27,35 @@ class ConnectionState(enum.Enum):
     ERROR = "error"
 
 
+def _user_to_dict(user) -> dict:
+    """Extract user information into a plain dict."""
+    info: dict = {}
+    for attr in ("session", "name", "channel_id", "mute", "deaf",
+                 "self_mute", "self_deaf", "suppress", "comment",
+                 "priority_speaker", "recording"):
+        try:
+            info[attr] = getattr(user, attr, None)
+        except Exception:
+            pass
+    return info
+
+
+def _channel_to_dict(channel) -> dict:
+    """Extract channel information into a plain dict."""
+    info: dict = {}
+    try:
+        info["channel_id"] = channel.get_id()
+    except Exception:
+        pass
+    for prop in ("name", "parent", "description", "temporary",
+                 "position", "max_users"):
+        try:
+            info[prop] = channel.get_property(prop)
+        except Exception:
+            pass
+    return info
+
+
 class MumbleClient(QObject):
     """Manages the lifecycle of a Mumble server connection.
 
@@ -36,47 +70,344 @@ class MumbleClient(QObject):
     state_changed = Signal(ConnectionState)
     audio_received = Signal(bytes)
 
+    # Auto-reconnect settings
+    _RECONNECT_BASE = 1.0    # seconds
+    _RECONNECT_MAX = 30.0    # seconds
+
     def __init__(
         self, config: ServerConfig, parent: QObject | None = None
     ) -> None:
         super().__init__(parent)
         self._config = config
         self._state = ConnectionState.DISCONNECTED
-        self._mumble = None
+        self._mumble: pymumble.Mumble | None = None
         self.events = MumbleEvents()
+        self._auto_reconnect = False
+        self._reconnect_attempt = 0
+        self._reconnect_timer: QTimer | None = None
+        self._stopping = False
 
     @property
     def state(self) -> ConnectionState:
         """Current connection state."""
         return self._state
 
+    def _set_state(self, new_state: ConnectionState) -> None:
+        """Update state and emit signal."""
+        if self._state != new_state:
+            old = self._state
+            self._state = new_state
+            logger.info("Connection state: %s -> %s", old.value, new_state.value)
+            self.state_changed.emit(new_state)
+
     def connect_to_server(
-        self, host: str | None = None, port: int | None = None, username: str | None = None
+        self,
+        host: str | None = None,
+        port: int | None = None,
+        username: str | None = None,
     ) -> None:
-        """Initiate connection to a Mumble server."""
-        raise NotImplementedError
+        """Initiate connection to a Mumble server.
+
+        Parameters override the stored ServerConfig values if provided.
+        """
+        if self._state in (ConnectionState.CONNECTING, ConnectionState.CONNECTED):
+            logger.warning("Already connected or connecting, disconnect first")
+            return
+
+        self._stopping = False
+        self._auto_reconnect = True
+        self._reconnect_attempt = 0
+
+        resolved_host = host or self._config.host
+        resolved_port = port or self._config.port
+        resolved_user = username or self._config.username
+
+        self._set_state(ConnectionState.CONNECTING)
+
+        try:
+            self._mumble = pymumble.Mumble(
+                host=resolved_host,
+                user=resolved_user,
+                port=resolved_port,
+                reconnect=False,  # we handle reconnect ourselves
+                force_tcp_only=True,
+            )
+            self._mumble.daemon = True
+
+            # Register pymumble callbacks -> Qt signals
+            self._register_callbacks()
+
+            # Start the pymumble thread (calls connect + loop)
+            self._mumble.start()
+
+            # Wait for connection in a background thread so we don't block Qt
+            connect_thread = threading.Thread(
+                target=self._wait_for_connection,
+                daemon=True,
+            )
+            connect_thread.start()
+
+        except Exception as exc:
+            logger.exception("Failed to start Mumble connection")
+            self._set_state(ConnectionState.ERROR)
+            self.events.emit_error(str(exc))
+
+    def _wait_for_connection(self) -> None:
+        """Block until pymumble reports connected (runs in helper thread)."""
+        try:
+            if self._mumble is None:
+                return
+            success = self._mumble.wait_until_connected(timeout=10)
+            if success:
+                self._set_state(ConnectionState.CONNECTED)
+                self.events.emit_connected()
+            else:
+                self._set_state(ConnectionState.ERROR)
+                self.events.emit_error("Connection timed out")
+                self._schedule_reconnect()
+        except Exception as exc:
+            logger.exception("Error waiting for connection")
+            self._set_state(ConnectionState.ERROR)
+            self.events.emit_error(str(exc))
+            self._schedule_reconnect()
+
+    def _register_callbacks(self) -> None:
+        """Wire pymumble callbacks to MumbleEvents Qt signals."""
+        if self._mumble is None:
+            return
+
+        cb = self._mumble.callbacks
+
+        cb.connected.set_handler(self._on_connected)
+        cb.disconnected.set_handler(self._on_disconnected)
+        cb.user_created.set_handler(self._on_user_created)
+        cb.user_updated.set_handler(self._on_user_updated)
+        cb.user_removed.set_handler(self._on_user_removed)
+        cb.channel_created.set_handler(self._on_channel_created)
+        cb.channel_updated.set_handler(self._on_channel_updated)
+        cb.channel_removed.set_handler(self._on_channel_removed)
+        cb.sound_received.set_handler(self._on_sound_received)
+
+    # ---- pymumble callback handlers (run in pymumble thread) ----
+
+    def _on_connected(self) -> None:
+        logger.info("pymumble: connected")
+        # The wait_for_connection thread handles the state transition
+
+    def _on_disconnected(self) -> None:
+        logger.info("pymumble: disconnected")
+        if self._stopping:
+            self._set_state(ConnectionState.DISCONNECTED)
+            self.events.emit_disconnected()
+        else:
+            self._set_state(ConnectionState.ERROR)
+            self.events.emit_disconnected()
+            self._schedule_reconnect()
+
+    def _on_user_created(self, user) -> None:
+        self.events.emit_user_joined(_user_to_dict(user))
+
+    def _on_user_updated(self, user, changes: dict) -> None:
+        info = _user_to_dict(user)
+        info["changes"] = changes
+        self.events.emit_user_state_changed(info)
+
+    def _on_user_removed(self, user, message) -> None:
+        self.events.emit_user_left(_user_to_dict(user))
+
+    def _on_channel_created(self, channel) -> None:
+        self.events.emit_channel_created(_channel_to_dict(channel))
+
+    def _on_channel_updated(self, channel, changes: dict) -> None:
+        info = _channel_to_dict(channel)
+        info["changes"] = changes
+        self.events.emit_channel_updated(info)
+
+    def _on_channel_removed(self, channel) -> None:
+        self.events.emit_channel_removed(_channel_to_dict(channel))
+
+    def _on_sound_received(self, user, soundchunk) -> None:
+        """Receive audio from pymumble and emit as Qt signal.
+
+        pymumble provides decoded PCM: 48kHz, 16-bit signed, mono.
+        """
+        pcm = soundchunk.pcm
+        self.events.emit_audio_received(pcm)
+        self.audio_received.emit(pcm)
+
+    # ---- Reconnection logic ----
+
+    def _schedule_reconnect(self) -> None:
+        """Schedule a reconnection attempt with exponential backoff."""
+        if self._stopping or not self._auto_reconnect:
+            return
+
+        delay = min(
+            self._RECONNECT_BASE * (2 ** self._reconnect_attempt),
+            self._RECONNECT_MAX,
+        )
+        self._reconnect_attempt += 1
+        logger.info(
+            "Scheduling reconnect attempt %d in %.1fs",
+            self._reconnect_attempt,
+            delay,
+        )
+
+        # Use a threading.Timer since we may not be on the Qt thread
+        timer = threading.Timer(delay, self._do_reconnect)
+        timer.daemon = True
+        timer.start()
+
+    def _do_reconnect(self) -> None:
+        """Perform one reconnection attempt."""
+        if self._stopping or not self._auto_reconnect:
+            return
+
+        logger.info("Attempting reconnect (attempt %d)", self._reconnect_attempt)
+        # Clean up old instance
+        self._cleanup_mumble()
+        # Re-connect using stored config
+        self.connect_to_server()
+
+    def _cleanup_mumble(self) -> None:
+        """Safely shut down the pymumble instance."""
+        if self._mumble is not None:
+            try:
+                self._mumble.stop()
+            except Exception:
+                logger.debug("Error stopping mumble instance during cleanup", exc_info=True)
+            self._mumble = None
+
+    # ---- Public API ----
 
     def disconnect(self) -> None:
         """Disconnect from the current server."""
-        raise NotImplementedError
+        self._stopping = True
+        self._auto_reconnect = False
+        self._cleanup_mumble()
+        self._set_state(ConnectionState.DISCONNECTED)
+        self.events.emit_disconnected()
 
     def send_audio(self, pcm_data: bytes) -> None:
-        """Send PCM audio data to the server."""
-        raise NotImplementedError
+        """Send PCM audio data to the server.
+
+        Args:
+            pcm_data: Raw PCM audio, 48kHz 16-bit signed mono.
+        """
+        if self._mumble is None or self._state != ConnectionState.CONNECTED:
+            return
+        if self._mumble.send_audio is None:
+            logger.warning("Audio sending is not enabled on this connection")
+            return
+        try:
+            self._mumble.send_audio.add_sound([pcm_data])
+        except Exception:
+            logger.exception("Failed to send audio")
 
     def join_channel(self, channel_id: int) -> None:
         """Join a channel by ID."""
-        raise NotImplementedError
+        if self._mumble is None or self._state != ConnectionState.CONNECTED:
+            logger.warning("Cannot join channel: not connected")
+            return
+        try:
+            channel = self._mumble.channels[channel_id]
+            channel.move_in()
+        except KeyError:
+            logger.error("Channel %d not found", channel_id)
+        except Exception:
+            logger.exception("Failed to join channel %d", channel_id)
 
     def get_channels(self) -> dict:
-        """Return the current channel tree."""
-        raise NotImplementedError
+        """Return the current channel tree as a dict of {id: channel_info}.
+
+        Each channel_info dict contains: channel_id, name, parent,
+        description, temporary, position, max_users.
+        """
+        if self._mumble is None or self._state != ConnectionState.CONNECTED:
+            return {}
+        result = {}
+        try:
+            for cid, channel in self._mumble.channels.items():
+                result[cid] = _channel_to_dict(channel)
+        except Exception:
+            logger.exception("Failed to get channels")
+        return result
 
     def get_users(self) -> dict:
-        """Return connected users."""
-        raise NotImplementedError
+        """Return connected users as a dict of {session: user_info}.
+
+        Each user_info dict contains: session, name, channel_id, mute,
+        deaf, self_mute, self_deaf, etc.
+        """
+        if self._mumble is None or self._state != ConnectionState.CONNECTED:
+            return {}
+        result = {}
+        try:
+            for session, user in self._mumble.users.by_session().items():
+                result[session] = _user_to_dict(user)
+        except Exception:
+            logger.exception("Failed to get users")
+        return result
 
 
 def test_connection_cli(host: str, port: int, username: str) -> int:
-    """CLI command to test server connection and exit."""
-    raise NotImplementedError
+    """CLI command to test server connection and exit.
+
+    Connects to the given Mumble server, prints channels and users,
+    then disconnects. Returns 0 on success, 1 on failure.
+    """
+    print(f"Connecting to {host}:{port} as '{username}'...")
+
+    try:
+        m = pymumble.Mumble(
+            host=host,
+            user=username,
+            port=port,
+            reconnect=False,
+            force_tcp_only=True,
+        )
+        m.daemon = True
+        m.start()
+
+        connected = m.wait_until_connected(timeout=10)
+        if not connected:
+            print("ERROR: Connection timed out after 10 seconds.")
+            try:
+                m.stop()
+            except Exception:
+                pass
+            return 1
+
+        print("Connected successfully!\n")
+
+        # Print channels
+        print("Channels:")
+        print("-" * 40)
+        for cid, channel in sorted(m.channels.items()):
+            info = _channel_to_dict(channel)
+            name = info.get("name", f"<channel {cid}>")
+            parent = info.get("parent", "")
+            parent_str = f" (parent={parent})" if parent != "" else ""
+            print(f"  [{cid}] {name}{parent_str}")
+
+        print()
+
+        # Print users
+        print("Users:")
+        print("-" * 40)
+        for _session_key, user in m.users.by_session().items():
+            info = _user_to_dict(user)
+            name = info.get("name", "?")
+            session = info.get("session", "?")
+            channel_id = info.get("channel_id", "?")
+            print(f"  [{session}] {name} (channel={channel_id})")
+
+        print()
+        print("Disconnecting...")
+        m.stop()
+        print("Done.")
+        return 0
+
+    except Exception as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1

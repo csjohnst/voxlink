@@ -5,11 +5,73 @@ from __future__ import annotations
 import logging
 import sys
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt, Signal
 
 from voxlink.config import PTTConfig
 
 logger = logging.getLogger(__name__)
+
+
+# Map evdev key names to Qt key codes for the Qt fallback
+_EVDEV_TO_QT: dict[str, int] = {
+    "KEY_F1": Qt.Key.Key_F1, "KEY_F2": Qt.Key.Key_F2,
+    "KEY_F3": Qt.Key.Key_F3, "KEY_F4": Qt.Key.Key_F4,
+    "KEY_F5": Qt.Key.Key_F5, "KEY_F6": Qt.Key.Key_F6,
+    "KEY_F7": Qt.Key.Key_F7, "KEY_F8": Qt.Key.Key_F8,
+    "KEY_F9": Qt.Key.Key_F9, "KEY_F10": Qt.Key.Key_F10,
+    "KEY_F11": Qt.Key.Key_F11, "KEY_F12": Qt.Key.Key_F12,
+    "KEY_F13": Qt.Key.Key_F13, "KEY_F14": Qt.Key.Key_F14,
+    "KEY_F15": Qt.Key.Key_F15, "KEY_F16": Qt.Key.Key_F16,
+    "KEY_SPACE": Qt.Key.Key_Space,
+    "KEY_CAPSLOCK": Qt.Key.Key_CapsLock,
+    "KEY_TAB": Qt.Key.Key_Tab,
+    "KEY_PAUSE": Qt.Key.Key_Pause,
+    "KEY_SCROLLLOCK": Qt.Key.Key_ScrollLock,
+    "KEY_INSERT": Qt.Key.Key_Insert,
+    "KEY_HOME": Qt.Key.Key_Home,
+    "KEY_END": Qt.Key.Key_End,
+    "KEY_PAGEUP": Qt.Key.Key_PageUp,
+    "KEY_PAGEDOWN": Qt.Key.Key_PageDown,
+    "KEY_NUMLOCK": Qt.Key.Key_NumLock,
+    "KEY_LEFTCTRL": Qt.Key.Key_Control,
+    "KEY_LEFTALT": Qt.Key.Key_Alt,
+    "KEY_LEFTSHIFT": Qt.Key.Key_Shift,
+    "KEY_LEFTMETA": Qt.Key.Key_Meta,
+}
+
+# Add letter and digit keys
+for _c in range(ord("A"), ord("Z") + 1):
+    _EVDEV_TO_QT[f"KEY_{chr(_c)}"] = getattr(Qt.Key, f"Key_{chr(_c)}")
+for _d in range(10):
+    _EVDEV_TO_QT[f"KEY_{_d}"] = getattr(Qt.Key, f"Key_{_d}")
+
+
+class _QtKeyFilter(QObject):
+    """Application-level event filter that watches for a specific key."""
+
+    pressed = Signal()
+    released = Signal()
+
+    def __init__(self, qt_key: int, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._qt_key = qt_key
+        self._is_pressed = False
+
+    def stop(self) -> None:
+        app = QCoreApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self)
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
+        if event.type() == QEvent.Type.KeyPress and not event.isAutoRepeat():
+            if event.key() == self._qt_key and not self._is_pressed:
+                self._is_pressed = True
+                self.pressed.emit()
+        elif event.type() == QEvent.Type.KeyRelease and not event.isAutoRepeat():
+            if event.key() == self._qt_key and self._is_pressed:
+                self._is_pressed = False
+                self.released.emit()
+        return False
 
 
 class ShortcutManager(QObject):
@@ -83,9 +145,21 @@ class ShortcutManager(QObject):
             return
 
         try:
-            # Disconnect signals
-            self._backend.activated.disconnect(self.ptt_pressed)  # type: ignore[attr-defined]
-            self._backend.deactivated.disconnect(self.ptt_released)  # type: ignore[attr-defined]
+            # Disconnect signals — different backends use different signal names
+            for sig_name in ("activated", "pressed"):
+                sig = getattr(self._backend, sig_name, None)
+                if sig is not None:
+                    try:
+                        sig.disconnect(self.ptt_pressed)
+                    except (RuntimeError, TypeError):
+                        pass
+            for sig_name in ("deactivated", "released"):
+                sig = getattr(self._backend, sig_name, None)
+                if sig is not None:
+                    try:
+                        sig.disconnect(self.ptt_released)
+                    except (RuntimeError, TypeError):
+                        pass
         except (RuntimeError, TypeError):
             pass
 
@@ -155,16 +229,34 @@ class ShortcutManager(QObject):
         return True
 
     def _start_qt_fallback(self) -> None:
-        """Use a minimal Qt-based fallback (window-focused only)."""
+        """Install an application-wide event filter for PTT key events.
+
+        Only works when the application window is focused.
+        """
+        qt_key = _EVDEV_TO_QT.get(self._config.evdev_key)
+        if qt_key is None:
+            logger.warning(
+                "Cannot map PTT key '%s' to Qt key code", self._config.evdev_key
+            )
+            self._active_method = "qt"
+            self.method_changed.emit("qt")
+            return
+
+        self._qt_filter = _QtKeyFilter(qt_key, self)
+        self._qt_filter.pressed.connect(self.ptt_pressed)
+        self._qt_filter.released.connect(self.ptt_released)
+
+        app = QCoreApplication.instance()
+        if app is not None:
+            app.installEventFilter(self._qt_filter)
+
+        self._backend = self._qt_filter
         self._active_method = "qt"
         self.method_changed.emit("qt")
         logger.info(
-            "Using Qt key events (window-focused only) - "
-            "global shortcuts unavailable"
+            "Using Qt key events for PTT (key=%s, window-focused only)",
+            self._config.evdev_key,
         )
-        # Qt key event handling is done at the widget level;
-        # the manager just records that this is the active method.
-        # The UI layer should install an event filter when method is "qt".
 
     def _on_portal_availability_changed(self, available: bool) -> None:
         """Handle portal session being revoked."""

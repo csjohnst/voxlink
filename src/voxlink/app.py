@@ -83,26 +83,38 @@ def run_app(config_path: str | None = None) -> int:
     shortcut_manager.ptt_pressed.connect(lambda: main_window.status_bar_widget.set_ptt_active(True))
     shortcut_manager.ptt_released.connect(lambda: main_window.status_bar_widget.set_ptt_active(False))
 
+    # Show which PTT method is active
+    _METHOD_LABELS = {"portal": "PTT (Portal)", "evdev": "PTT (evdev)", "qt": "PTT (Qt, focused only)", "none": "PTT (none)"}
+    shortcut_manager.method_changed.connect(
+        lambda m: main_window._server_page.info_area.append(f"Shortcut method: {_METHOD_LABELS.get(m, m)}")
+    )
+
     # Wire capture level to status bar input meter
     capture_manager.level_changed.connect(main_window.status_bar_widget.set_input_level)
 
     # Wire audio pipeline through filter functions that respect mute/deafen
+    _send_count = [0]
+    _recv_count = [0]
+
     def _send_audio_if_not_muted(pcm_data: bytes) -> None:
+        _send_count[0] += 1
+        if _send_count[0] % 50 == 1:
+            logger.info("_send_audio_if_not_muted called (#%d), muted=%s, %d bytes",
+                        _send_count[0], main_window._is_muted, len(pcm_data))
         if not main_window._is_muted:
             mumble_client.send_audio(pcm_data)
 
-    def _play_audio_if_not_deafened(pcm_data: bytes) -> None:
-        if not main_window._is_deafened:
-            playback_manager.play(pcm_data)
-
     def _play_audio_filtered(session_id: int, pcm_data: bytes) -> None:
+        _recv_count[0] += 1
+        if _recv_count[0] % 50 == 1:
+            logger.info("_play_audio_filtered called (#%d), session=%d, deafened=%s, %d bytes",
+                        _recv_count[0], session_id, main_window._is_deafened, len(pcm_data))
         if main_window._is_deafened:
             return
         if main_window.channel_tree.is_user_muted(session_id):
             return
         vol = main_window.channel_tree.get_user_volume(session_id)
         if vol != 1.0:
-            # Apply volume scaling
             import struct
             n_samples = len(pcm_data) // 2
             samples = struct.unpack(f"<{n_samples}h", pcm_data)
@@ -110,8 +122,15 @@ def run_app(config_path: str | None = None) -> int:
             pcm_data = struct.pack(f"<{n_samples}h", *scaled)
         playback_manager.play(pcm_data)
 
-    capture_manager.audio_captured.connect(_send_audio_if_not_muted)
-    mumble_client.audio_received_from_user.connect(_play_audio_filtered)
+    # Use DirectConnection so audio callbacks run immediately on the
+    # emitting thread instead of being queued to the main-thread event loop.
+    # This avoids latency and potential signal-delivery issues when emitting
+    # from plain threading.Thread (capture) or pymumble's network thread.
+    from PySide6.QtCore import Qt
+    capture_manager.audio_captured.connect(
+        _send_audio_if_not_muted, Qt.ConnectionType.DirectConnection)
+    mumble_client.audio_received_from_user.connect(
+        _play_audio_filtered, Qt.ConnectionType.DirectConnection)
 
     # Wire mumble events to UI
     mumble_client.events.connected.connect(main_window.on_connected)

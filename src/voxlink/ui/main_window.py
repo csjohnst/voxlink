@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QSettings, QTimer, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QSplitter,
@@ -18,6 +18,7 @@ from qfluentwidgets import (
     setTheme, Theme, InfoBar, InfoBarPosition,
     SimpleCardWidget, setThemeColor,
 )
+from qfluentwidgets.components.dialog_box.message_box_base import MessageBoxBase
 
 from voxlink.ui.channel_tree import ChannelTree
 from voxlink.ui.status_bar import StatusBar
@@ -70,13 +71,14 @@ class ServerPage(QWidget):
         layout.addWidget(self.status_bar)
 
 
-class ConnectDialog(MessageBox):
+class ConnectDialog(MessageBoxBase):
     """Fluent-styled connect dialog."""
 
     def __init__(self, host="localhost", port=64738, username="VoxLinkUser", parent=None):
-        super().__init__("Connect to Server", "", parent)
+        super().__init__(parent)
 
-        # Add custom widgets to the message box's viewLayout
+        self.viewLayout.addWidget(SubtitleLabel("Connect to Server"))
+
         self.host_edit = LineEdit()
         self.host_edit.setPlaceholderText("Server address")
         self.host_edit.setText(host)
@@ -98,7 +100,6 @@ class ConnectDialog(MessageBox):
         self.viewLayout.addWidget(BodyLabel("Username"))
         self.viewLayout.addWidget(self.username_edit)
 
-        # Rename buttons
         self.yesButton.setText("Connect")
         self.cancelButton.setText("Cancel")
 
@@ -224,8 +225,17 @@ class MainWindow(FluentWindow):
             "Connected", "Successfully connected to server",
             parent=self, duration=3000, position=InfoBarPosition.TOP,
         )
+        self._refresh_tree()
+        # Refresh again after a short delay to pick up late-arriving user data
+        QTimer.singleShot(1000, self._refresh_tree)
+
+    def _refresh_tree(self) -> None:
+        """Rebuild the channel tree from the current server state."""
         channels = self._mumble_client.get_channels()
         users = self._mumble_client.get_users()
+        logger.info("Refreshing tree: %d channels, %d users", len(channels), len(users))
+        logger.debug("Channels: %s", channels)
+        logger.debug("Users: %s", users)
         self._server_page.channel_tree.update_channels(channels, users)
 
     def on_disconnected(self) -> None:
@@ -248,15 +258,14 @@ class MainWindow(FluentWindow):
 
     def on_channel_updated(self, channel_data: dict) -> None:
         """Handle channel tree update."""
-        channels = self._mumble_client.get_channels()
-        users = self._mumble_client.get_users()
-        self._server_page.channel_tree.update_channels(channels, users)
+        self._refresh_tree()
 
     def on_user_joined(self, user_data: dict) -> None:
         """Handle user joining."""
         name = user_data.get("name", "Unknown")
         self._server_page.info_area.append(f"User joined: {name}")
-        self._server_page.channel_tree.add_user(user_data)
+        # Full refresh to ensure channel tree is up-to-date
+        self._refresh_tree()
 
     def on_user_left(self, user_data: dict) -> None:
         """Handle user leaving."""

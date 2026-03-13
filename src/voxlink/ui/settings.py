@@ -10,7 +10,6 @@ from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout
 
 from qfluentwidgets import (
     ScrollArea,
-    ExpandLayout,
     SubtitleLabel,
     BodyLabel,
     ComboBox,
@@ -102,9 +101,10 @@ class SettingsPage(ScrollArea):
         # Scroll content
         self._content = QWidget()
         self._content.setObjectName("settingsContent")
-        self._layout = ExpandLayout(self._content)
+        self._layout = QVBoxLayout(self._content)
         self._layout.setContentsMargins(28, 28, 28, 28)
         self._layout.setSpacing(16)
+        self._layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self._config = config
         self._device_manager = device_manager
@@ -116,6 +116,10 @@ class SettingsPage(ScrollArea):
         self._create_actions()
 
         self.setWidget(self._content)
+
+        # Transparent backgrounds so FluentWindow theming shows through
+        self.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        self._content.setStyleSheet("QWidget#settingsContent { background: transparent; }")
         self._load_values()
 
     # ---- Audio Group ----

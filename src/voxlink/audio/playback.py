@@ -8,8 +8,7 @@ import queue
 import struct
 import threading
 
-from pasimple import PaSimple, PA_STREAM_PLAYBACK, PA_SAMPLE_S16LE, PaSimpleError
-from PySide6.QtCore import QObject, QThread, Signal
+from PySide6.QtCore import QObject, Signal
 
 from voxlink.config import AudioConfig
 
@@ -25,127 +24,11 @@ FRAME_BYTES = FRAME_SAMPLES * CHANNELS * 2  # 16-bit = 2 bytes per sample
 _STOP = object()
 
 
-class _PlaybackWorker(QObject):
-    """Worker that runs the blocking playback loop in a QThread."""
-
-    level_changed = Signal(float)
-
-    def __init__(self, device_name: str | None) -> None:
-        super().__init__()
-        self._device_name = device_name or None
-        self._running = False
-        self._stream: PaSimple | None = None
-        self._queue: queue.Queue = queue.Queue(maxsize=100)
-        self._lock = threading.Lock()
-
-    def set_device(self, device_name: str | None) -> None:
-        """Set the device name. Must be called before run() or between stop/start."""
-        self._device_name = device_name or None
-
-    def enqueue(self, pcm_data: bytes) -> None:
-        """Add PCM data to the playback queue (non-blocking, drops on overflow)."""
-        try:
-            self._queue.put_nowait(pcm_data)
-        except queue.Full:
-            # Drop oldest frame and add new one to avoid unbounded latency
-            try:
-                self._queue.get_nowait()
-            except queue.Empty:
-                pass
-            try:
-                self._queue.put_nowait(pcm_data)
-            except queue.Full:
-                pass
-
-    def run(self) -> None:
-        """Main playback loop (called when thread starts)."""
-        self._running = True
-        try:
-            self._open_stream()
-            while self._running:
-                try:
-                    item = self._queue.get(timeout=0.1)
-                except queue.Empty:
-                    continue
-
-                if item is _STOP:
-                    break
-
-                try:
-                    with self._lock:
-                        if self._stream is not None:
-                            self._stream.write(item)
-                except PaSimpleError:
-                    if self._running:
-                        logger.exception("Playback write error")
-                    break
-
-                # Calculate output level
-                level = self._compute_rms(item)
-                self.level_changed.emit(level)
-
-        except Exception:
-            logger.exception("Playback worker crashed")
-        finally:
-            self._close_stream()
-
-    def stop(self) -> None:
-        """Signal the playback loop to stop."""
-        self._running = False
-        # Push sentinel to unblock the queue.get()
-        try:
-            self._queue.put_nowait(_STOP)
-        except queue.Full:
-            pass
-
-    def _open_stream(self) -> None:
-        """Open a PulseAudio playback stream."""
-        with self._lock:
-            self._stream = PaSimple(
-                direction=PA_STREAM_PLAYBACK,
-                format=PA_SAMPLE_S16LE,
-                channels=CHANNELS,
-                rate=RATE,
-                app_name="voxlink",
-                stream_name="playback",
-                device_name=self._device_name,
-                tlength=FRAME_BYTES * 4,  # ~80ms buffer
-                prebuf=FRAME_BYTES,  # start playback after one frame
-                minreq=FRAME_BYTES,
-            )
-        logger.info(
-            "Playback stream opened on device=%s",
-            self._device_name or "(default)",
-        )
-
-    def _close_stream(self) -> None:
-        """Close the playback stream if open."""
-        with self._lock:
-            if self._stream is not None:
-                try:
-                    self._stream.drain()
-                except Exception:
-                    pass
-                try:
-                    self._stream.close()
-                except Exception:
-                    pass
-                self._stream = None
-
-    @staticmethod
-    def _compute_rms(data: bytes) -> float:
-        """Compute RMS level normalized to 0.0-1.0 range."""
-        n_samples = len(data) // 2
-        if n_samples == 0:
-            return 0.0
-        samples = struct.unpack(f"<{n_samples}h", data)
-        sum_sq = sum(s * s for s in samples)
-        rms = math.sqrt(sum_sq / n_samples)
-        return min(rms / 32767.0, 1.0)
-
-
 class PlaybackManager(QObject):
     """Plays audio through speakers in a dedicated thread.
+
+    Uses a plain threading.Thread with a blocking pasimple write loop.
+    All PulseAudio operations happen on that thread only.
 
     Signals:
         level_changed: Emitted with current output RMS level (0.0 - 1.0).
@@ -156,58 +39,133 @@ class PlaybackManager(QObject):
     def __init__(self, config: AudioConfig, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._config = config
-        self._thread: QThread | None = None
-        self._worker: _PlaybackWorker | None = None
-        self._running = False
+        self._queue: queue.Queue = queue.Queue(maxsize=100)
+        self._thread: threading.Thread | None = None
 
     def play(self, pcm_data: bytes) -> None:
         """Queue PCM audio data for playback."""
-        if self._worker is not None:
-            self._worker.enqueue(pcm_data)
-
-    def set_device(self, device_name: str) -> None:
-        """Switch to a different output device."""
-        self._config.output_device = device_name
-        if self._running:
-            # Restart playback with new device
-            self.stop()
-            self.start()
+        if self._thread is None or not self._thread.is_alive():
+            return
+        try:
+            self._queue.put_nowait(pcm_data)
+        except queue.Full:
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self._queue.put_nowait(pcm_data)
+            except queue.Full:
+                pass
 
     def start(self) -> None:
-        """Initialize the playback stream."""
-        if self._running:
-            logger.warning("Playback already running")
+        """Start the playback thread."""
+        if self._thread is not None and self._thread.is_alive():
             return
 
-        device = self._config.output_device if self._config.output_device else None
+        # Clear any stale data
+        while not self._queue.empty():
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                break
 
-        self._thread = QThread()
-        self._thread.setObjectName("playback-thread")
-        self._worker = _PlaybackWorker(device)
-        self._worker.moveToThread(self._thread)
-
-        # Wire signals
-        self._worker.level_changed.connect(self.level_changed)
-        self._thread.started.connect(self._worker.run)
-
-        self._running = True
+        self._thread = threading.Thread(
+            target=self._playback_loop,
+            name="voxlink-playback",
+            daemon=True,
+        )
         self._thread.start()
         logger.info("Playback started")
 
     def stop(self) -> None:
-        """Close the playback stream."""
-        if not self._running:
+        """Stop playback (non-blocking)."""
+        # Push sentinel to unblock queue.get()
+        try:
+            self._queue.put_nowait(_STOP)
+        except queue.Full:
+            while not self._queue.empty():
+                try:
+                    self._queue.get_nowait()
+                except queue.Empty:
+                    break
+            try:
+                self._queue.put_nowait(_STOP)
+            except queue.Full:
+                pass
+        logger.info("Playback stop requested")
+
+    def _playback_loop(self) -> None:
+        """Blocking playback loop running on a dedicated thread."""
+        from pasimple import PaSimple, PA_STREAM_PLAYBACK, PA_SAMPLE_S16LE, PaSimpleError
+
+        device = self._config.output_device or None
+        stream = None
+
+        try:
+            stream = PaSimple(
+                direction=PA_STREAM_PLAYBACK,
+                format=PA_SAMPLE_S16LE,
+                channels=CHANNELS,
+                rate=RATE,
+                app_name="voxlink",
+                stream_name="playback",
+                device_name=device,
+                tlength=FRAME_BYTES * 4,
+                prebuf=FRAME_BYTES,
+                minreq=FRAME_BYTES,
+            )
+            logger.info("Playback stream opened on device=%s", device or "(default)")
+        except Exception:
+            logger.exception("Failed to open playback stream on device=%s", device or "(default)")
             return
 
-        self._running = False
+        try:
+            while True:
+                try:
+                    item = self._queue.get(timeout=0.1)
+                except queue.Empty:
+                    continue
 
-        if self._worker is not None:
-            self._worker.stop()
+                if item is _STOP:
+                    break
 
-        if self._thread is not None:
-            self._thread.quit()
-            self._thread.wait(3000)
-            self._thread = None
+                try:
+                    stream.write(item)
+                except PaSimpleError:
+                    logger.exception("Playback write error")
+                    break
 
-        self._worker = None
-        logger.info("Playback stopped")
+                level = _compute_rms(item)
+                self.level_changed.emit(level)
+        except Exception:
+            logger.exception("Playback worker crashed")
+        finally:
+            try:
+                stream.drain()
+            except Exception:
+                pass
+            try:
+                stream.close()
+            except Exception:
+                pass
+            logger.info("Playback stream closed")
+
+    def set_device(self, device_name: str) -> None:
+        """Switch to a different output device."""
+        self._config.output_device = device_name
+        if self._thread is not None and self._thread.is_alive():
+            self.stop()
+            self._thread.join(timeout=2.0)
+            self.start()
+
+
+def _compute_rms(data: bytes) -> float:
+    """Compute RMS level normalized to 0.0-1.0 range."""
+    n_samples = len(data) // 2
+    if n_samples == 0:
+        return 0.0
+    samples = struct.unpack(f"<{n_samples}h", data)
+    sum_sq = sum(s * s for s in samples)
+    rms = math.sqrt(sum_sq / n_samples)
+    return min(rms / 32767.0, 1.0)

@@ -416,6 +416,11 @@ class MumbleClient(QObject):
             if self._mumble is None:
                 return
             success = self._mumble.wait_until_connected(timeout=10)
+            # pymumble can report "connected" even if the thread crashed
+            # right after the TLS handshake. Verify it's still alive.
+            if success and not self._mumble.is_alive():
+                logger.error("pymumble thread died despite reporting connected")
+                success = False
             if success:
                 self._set_state(ConnectionState.CONNECTED)
                 sa = self._mumble.send_audio

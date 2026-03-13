@@ -1,4 +1,4 @@
-"""System tray icon with status and context menu."""
+"""System tray icon with Fluent-styled context menu."""
 
 from __future__ import annotations
 
@@ -6,7 +6,9 @@ import logging
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QColor, QIcon, QPixmap, QPainter, QBrush
-from PySide6.QtWidgets import QMainWindow, QMenu, QSystemTrayIcon
+from PySide6.QtWidgets import QMainWindow, QSystemTrayIcon
+
+from qfluentwidgets import SystemTrayMenu, Action, FluentIcon, isDarkTheme
 
 from voxlink.config import UIConfig
 
@@ -51,28 +53,28 @@ class TrayIcon(QSystemTrayIcon):
         self.activated.connect(self._on_activated)
 
     def _setup_menu(self) -> None:
-        menu = QMenu()
+        menu = SystemTrayMenu(parent=self._main_window)
 
-        self._show_action = QAction("Show", self)
+        self._show_action = Action(FluentIcon.FULL_SCREEN, "Show", parent=menu)
         self._show_action.triggered.connect(self._toggle_window)
         menu.addAction(self._show_action)
 
         menu.addSeparator()
 
-        self._mute_action = QAction("Mute", self)
+        self._mute_action = Action(FluentIcon.MUTE, "Mute", parent=menu)
         self._mute_action.setCheckable(True)
         menu.addAction(self._mute_action)
 
-        self._deafen_action = QAction("Deafen", self)
+        self._deafen_action = Action(FluentIcon.HEADPHONE, "Deafen", parent=menu)
         self._deafen_action.setCheckable(True)
         menu.addAction(self._deafen_action)
 
         menu.addSeparator()
 
-        self._disconnect_action = QAction("Disconnect", self)
+        self._disconnect_action = Action(FluentIcon.CLOSE, "Disconnect", parent=menu)
         menu.addAction(self._disconnect_action)
 
-        self._quit_action = QAction("Quit", self)
+        self._quit_action = Action(FluentIcon.POWER_BUTTON, "Quit", parent=menu)
         menu.addAction(self._quit_action)
 
         self.setContextMenu(menu)
@@ -80,19 +82,19 @@ class TrayIcon(QSystemTrayIcon):
     # ---- Public accessors for wiring signals ----
 
     @property
-    def mute_action(self) -> QAction:
+    def mute_action(self) -> Action:
         return self._mute_action
 
     @property
-    def deafen_action(self) -> QAction:
+    def deafen_action(self) -> Action:
         return self._deafen_action
 
     @property
-    def disconnect_action(self) -> QAction:
+    def disconnect_action(self) -> Action:
         return self._disconnect_action
 
     @property
-    def quit_action(self) -> QAction:
+    def quit_action(self) -> Action:
         return self._quit_action
 
     # ---- Icon state changes ----

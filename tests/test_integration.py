@@ -14,7 +14,7 @@ from voxlink.ui.main_window import MainWindow
 from voxlink.ui.status_bar import StatusBar, AudioLevelMeter
 from voxlink.ui.channel_tree import ChannelTree
 from voxlink.ui.tray import TrayIcon
-from voxlink.ui.settings import SettingsDialog
+from voxlink.ui.settings import SettingsPage
 
 
 @pytest.fixture(scope="session")
@@ -45,8 +45,8 @@ def test_main_window_creation(qapp, config, managers):
     window = MainWindow(config=config, device_manager=dm, capture_manager=cm,
                        playback_manager=pm, mumble_client=mc, shortcut_manager=sm)
     assert window.windowTitle().startswith("VoxLink")
-    assert window.minimumWidth() == 600
-    assert window.minimumHeight() == 400
+    assert window.minimumWidth() >= 600
+    assert window.minimumHeight() >= 400
 
 
 def test_status_bar_ptt_indicator(qapp):
@@ -81,10 +81,10 @@ def test_tray_icon_creation(qapp, config, managers):
     tray.set_disconnected()
 
 
-def test_settings_dialog_creation(qapp, config):
+def test_settings_page_creation(qapp, config):
     dm = DeviceManager()
-    dlg = SettingsDialog(config, dm)
-    assert dlg.windowTitle() == "VoxLink Settings"
+    page = SettingsPage(config, dm)
+    assert page.objectName() == "settingsPage"
 
 
 def test_mumble_client_initial_state(config):

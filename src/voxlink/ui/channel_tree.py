@@ -1,4 +1,4 @@
-"""Channel and user tree widget."""
+"""Channel and user tree widget — Fluent Design."""
 
 from __future__ import annotations
 
@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QColor, QPixmap, QPainter, QIcon, QBrush
-from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QMenu
+from PySide6.QtWidgets import QTreeWidgetItem
+from qfluentwidgets import TreeWidget, RoundMenu, Action, FluentIcon, isDarkTheme
 
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QWidget
@@ -22,7 +23,7 @@ _TYPE_CHANNEL = "channel"
 _TYPE_USER = "user"
 
 
-def _circle_icon(color: QColor, size: int = 12) -> QIcon:
+def _circle_icon(color: QColor, size: int = 14) -> QIcon:
     """Generate a small colored circle icon."""
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
@@ -35,7 +36,7 @@ def _circle_icon(color: QColor, size: int = 12) -> QIcon:
     return QIcon(pixmap)
 
 
-# Pre-built user state icons
+# Pre-built user state icons (lazily initialised)
 _ICON_NORMAL = None
 _ICON_TALKING = None
 _ICON_MUTED = None
@@ -48,11 +49,25 @@ def _ensure_icons() -> None:
     global _ICON_NORMAL, _ICON_TALKING, _ICON_MUTED, _ICON_DEAFENED, _ICON_CHANNEL
     if _ICON_NORMAL is not None:
         return
-    _ICON_NORMAL = _circle_icon(QColor(158, 158, 158))    # grey
-    _ICON_TALKING = _circle_icon(QColor(76, 175, 80))      # green
-    _ICON_MUTED = _circle_icon(QColor(244, 67, 54))        # red
-    _ICON_DEAFENED = _circle_icon(QColor(255, 152, 0))     # orange
-    _ICON_CHANNEL = _circle_icon(QColor(100, 149, 237))    # cornflower blue
+
+    dark = isDarkTheme()
+
+    # Adapt icon colours for dark/light theme
+    _ICON_NORMAL = _circle_icon(
+        QColor(180, 180, 180) if dark else QColor(140, 140, 140)
+    )
+    _ICON_TALKING = _circle_icon(
+        QColor("#4ade80") if dark else QColor("#22c55e")
+    )
+    _ICON_MUTED = _circle_icon(
+        QColor("#ef4444") if dark else QColor("#dc2626")
+    )
+    _ICON_DEAFENED = _circle_icon(
+        QColor("#fbbf24") if dark else QColor("#eab308")
+    )
+    _ICON_CHANNEL = _circle_icon(
+        QColor("#60a5fa") if dark else QColor("#3b82f6")
+    )
 
 
 def _user_icon(user_data: dict) -> QIcon:
@@ -66,11 +81,12 @@ def _user_icon(user_data: dict) -> QIcon:
     return _ICON_NORMAL  # type: ignore[return-value]
 
 
-class ChannelTree(QTreeWidget):
+class ChannelTree(TreeWidget):
     """Displays the server channel hierarchy with users.
 
     Channels are top-level items; users are children of their
     current channel. Icons indicate user state (talking, muted, deafened).
+    Uses Fluent Design TreeWidget with RoundMenu context menus.
     """
 
     channel_join_requested = Signal(int)
@@ -216,7 +232,9 @@ class ChannelTree(QTreeWidget):
                 return found
         return None
 
-    def _find_user_in_subtree(self, parent: QTreeWidgetItem, session: int) -> QTreeWidgetItem | None:
+    def _find_user_in_subtree(
+        self, parent: QTreeWidgetItem, session: int
+    ) -> QTreeWidgetItem | None:
         for i in range(parent.childCount()):
             child = parent.child(i)
             if child is None:
@@ -236,17 +254,23 @@ class ChannelTree(QTreeWidget):
                 self.channel_join_requested.emit(channel_id)
 
     def _show_context_menu(self, pos) -> None:
-        """Show context menu for users."""
+        """Show Fluent RoundMenu context menu for users."""
         item = self.itemAt(pos)
         if item is None or item.data(0, _ROLE_TYPE) != _TYPE_USER:
             return
 
-        menu = QMenu(self)
-        mute_action = menu.addAction("Mute locally")
-        volume_action = menu.addAction("Adjust volume...")
+        menu = RoundMenu(parent=self)
+        mute_action = Action(FluentIcon.MUTE, "Mute locally", parent=menu)
+        volume_action = Action(FluentIcon.VOLUME, "Adjust volume...", parent=menu)
+        menu.addAction(mute_action)
+        menu.addAction(volume_action)
 
         action = menu.exec(self.viewport().mapToGlobal(pos))
         if action == mute_action:
-            logger.info("Local mute for user session=%s (placeholder)", item.data(0, _ROLE_ID))
+            logger.info(
+                "Local mute for user session=%s (placeholder)", item.data(0, _ROLE_ID)
+            )
         elif action == volume_action:
-            logger.info("Volume adjust for user session=%s (placeholder)", item.data(0, _ROLE_ID))
+            logger.info(
+                "Volume adjust for user session=%s (placeholder)", item.data(0, _ROLE_ID)
+            )

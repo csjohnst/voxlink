@@ -1,4 +1,4 @@
-"""Main application window."""
+"""Main application window using Fluent Design."""
 
 from __future__ import annotations
 
@@ -6,20 +6,17 @@ import logging
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QSettings, Qt
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QDialog,
-    QDialogButtonBox,
-    QFormLayout,
-    QHBoxLayout,
-    QMainWindow,
-    QMessageBox,
-    QLineEdit,
-    QSpinBox,
-    QSplitter,
-    QTextEdit,
-    QVBoxLayout,
-    QWidget,
+    QWidget, QVBoxLayout, QSplitter,
+)
+from qfluentwidgets import (
+    FluentWindow, FluentIcon, NavigationItemPosition,
+    TextEdit, LineEdit, SpinBox,
+    SubtitleLabel, BodyLabel,
+    MessageBox,
+    setTheme, Theme, InfoBar, InfoBarPosition,
+    SimpleCardWidget, setThemeColor,
 )
 
 from voxlink.ui.channel_tree import ChannelTree
@@ -37,41 +34,91 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class ConnectDialog(QDialog):
-    """Simple dialog asking for host, port, and username."""
+class ServerPage(QWidget):
+    """Main server interaction page."""
 
-    def __init__(self, host: str = "localhost", port: int = 64738, username: str = "VoxLinkUser", parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Connect to Server")
-        layout = QFormLayout(self)
+        self.setObjectName("serverPage")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 8, 16, 8)
 
-        self.host_edit = QLineEdit(host)
-        layout.addRow("Host:", self.host_edit)
+        # Splitter with channel tree and info area
+        splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        self.port_spin = QSpinBox()
+        self.channel_tree = ChannelTree()
+        splitter.addWidget(self.channel_tree)
+
+        # Info area in a card
+        info_card = SimpleCardWidget()
+        info_layout = QVBoxLayout(info_card)
+        info_layout.setContentsMargins(12, 12, 12, 12)
+        header = SubtitleLabel("Server")
+        info_layout.addWidget(header)
+        self.info_area = TextEdit()
+        self.info_area.setReadOnly(True)
+        self.info_area.setPlaceholderText("Server information and events will appear here.")
+        info_layout.addWidget(self.info_area)
+        splitter.addWidget(info_card)
+
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 2)
+        layout.addWidget(splitter, 1)
+
+        # Status bar at bottom
+        self.status_bar = StatusBar()
+        layout.addWidget(self.status_bar)
+
+
+class ConnectDialog(MessageBox):
+    """Fluent-styled connect dialog."""
+
+    def __init__(self, host="localhost", port=64738, username="VoxLinkUser", parent=None):
+        super().__init__("Connect to Server", "", parent)
+
+        # Add custom widgets to the message box's viewLayout
+        self.host_edit = LineEdit()
+        self.host_edit.setPlaceholderText("Server address")
+        self.host_edit.setText(host)
+        self.host_edit.setClearButtonEnabled(True)
+
+        self.port_spin = SpinBox()
         self.port_spin.setRange(1, 65535)
         self.port_spin.setValue(port)
-        layout.addRow("Port:", self.port_spin)
 
-        self.username_edit = QLineEdit(username)
-        layout.addRow("Username:", self.username_edit)
+        self.username_edit = LineEdit()
+        self.username_edit.setPlaceholderText("Username")
+        self.username_edit.setText(username)
+        self.username_edit.setClearButtonEnabled(True)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addRow(buttons)
+        self.viewLayout.addWidget(BodyLabel("Host"))
+        self.viewLayout.addWidget(self.host_edit)
+        self.viewLayout.addWidget(BodyLabel("Port"))
+        self.viewLayout.addWidget(self.port_spin)
+        self.viewLayout.addWidget(BodyLabel("Username"))
+        self.viewLayout.addWidget(self.username_edit)
+
+        # Rename buttons
+        self.yesButton.setText("Connect")
+        self.cancelButton.setText("Cancel")
+
+        self.widget.setMinimumWidth(360)
 
 
-class MainWindow(QMainWindow):
-    """VoxLink main application window.
+class _SettingsPagePlaceholder(QWidget):
+    """Placeholder settings page until the real one is written."""
 
-    Layout:
-    - Left: Channel tree (QTreeWidget)
-    - Right: Status/info area
-    - Bottom: Status bar with PTT indicator, audio levels, mute/deafen
-    """
+    def __init__(self, config, device_manager, parent=None):
+        super().__init__(parent)
+        self.setObjectName("settingsPage")
+        layout = QVBoxLayout(self)
+        layout.addWidget(SubtitleLabel("Settings"))
+        layout.addWidget(BodyLabel("Settings page will be available in a future update."))
+        layout.addStretch()
+
+
+class MainWindow(FluentWindow):
+    """VoxLink main application window using Fluent Design with sidebar navigation."""
 
     def __init__(
         self,
@@ -89,167 +136,133 @@ class MainWindow(QMainWindow):
         self._playback_manager = playback_manager
         self._mumble_client = mumble_client
         self._shortcut_manager = shortcut_manager
-        self._tray_icon = None  # set externally by app.py
+        self._tray_icon = None
         self._is_muted = False
         self._is_deafened = False
-        self._setup_ui()
-        self._setup_menu()
-        self._setup_shortcuts()
+
+        # Set theme
+        setTheme(Theme.AUTO)
+        setThemeColor(QColor("#4ade80"))
+
+        # Setup
+        self.setWindowTitle("VoxLink")
+        self.setMinimumSize(700, 500)
+
+        # Create pages
+        self._server_page = ServerPage()
+        self._server_page.channel_tree.channel_join_requested.connect(self._on_join_channel)
+        self._server_page.status_bar.mute_toggled.connect(self._on_mute_toggled)
+        self._server_page.status_bar.deafen_toggled.connect(self._on_deafen_toggled)
+
+        # Settings page - try to import the real one, fall back to placeholder
+        try:
+            from voxlink.ui.settings import SettingsPage
+            self._settings_page = SettingsPage(config, device_manager)
+        except ImportError:
+            self._settings_page = _SettingsPagePlaceholder(config, device_manager)
+
+        # Add navigation items
+        self.addSubInterface(self._server_page, FluentIcon.MICROPHONE, "Server")
+
+        # Add connect/disconnect to nav
+        self.navigationInterface.addItem(
+            routeKey="connect",
+            icon=FluentIcon.LINK,
+            text="Connect",
+            onClick=self._show_connect_dialog,
+            selectable=False,
+            position=NavigationItemPosition.TOP,
+        )
+        self.navigationInterface.addItem(
+            routeKey="disconnect",
+            icon=FluentIcon.CLOSE,
+            text="Disconnect",
+            onClick=self._disconnect,
+            selectable=False,
+            position=NavigationItemPosition.TOP,
+        )
+
+        self.addSubInterface(
+            self._settings_page, FluentIcon.SETTING, "Settings",
+            position=NavigationItemPosition.BOTTOM,
+        )
+
+        # About in bottom nav
+        self.navigationInterface.addItem(
+            routeKey="about",
+            icon=FluentIcon.INFO,
+            text="About",
+            onClick=self._show_about,
+            selectable=False,
+            position=NavigationItemPosition.BOTTOM,
+        )
+
         self._restore_geometry()
+
+    # ---- Properties for external wiring ----
+
+    @property
+    def channel_tree(self) -> ChannelTree:
+        return self._server_page.channel_tree
+
+    @property
+    def status_bar_widget(self) -> StatusBar:
+        return self._server_page.status_bar
 
     def set_tray_icon(self, tray_icon) -> None:
         """Store reference to tray icon for minimize-to-tray behavior."""
         self._tray_icon = tray_icon
 
-    def _setup_ui(self) -> None:
-        """Initialize the window layout and widgets."""
-        self.setWindowTitle("VoxLink \u2014 Disconnected")
-        self.setMinimumSize(600, 400)
-
-        # Central widget
-        central = QWidget()
-        self.setCentralWidget(central)
-        main_layout = QVBoxLayout(central)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-
-        # Splitter: channel tree (left) + info area (right)
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-
-        self._channel_tree = ChannelTree()
-        self._channel_tree.channel_join_requested.connect(self._on_join_channel)
-        splitter.addWidget(self._channel_tree)
-
-        self._info_area = QTextEdit()
-        self._info_area.setReadOnly(True)
-        self._info_area.setPlaceholderText("Server information and events will appear here.")
-        splitter.addWidget(self._info_area)
-
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 2)
-        main_layout.addWidget(splitter, 1)
-
-        # Status bar at bottom
-        self._status_bar = StatusBar()
-        self._status_bar.mute_toggled.connect(self._on_mute_toggled)
-        self._status_bar.deafen_toggled.connect(self._on_deafen_toggled)
-        main_layout.addWidget(self._status_bar)
-
-    def _setup_menu(self) -> None:
-        """Build the menu bar."""
-        menubar = self.menuBar()
-
-        # File menu
-        file_menu = menubar.addMenu("&File")
-
-        connect_action = QAction("&Connect...", self)
-        connect_action.setToolTip("Connect to a Mumble server")
-        connect_action.triggered.connect(self._show_connect_dialog)
-        file_menu.addAction(connect_action)
-
-        disconnect_action = QAction("&Disconnect", self)
-        disconnect_action.setToolTip("Disconnect from the current server")
-        disconnect_action.triggered.connect(self._disconnect)
-        file_menu.addAction(disconnect_action)
-
-        file_menu.addSeparator()
-
-        quit_action = QAction("&Quit", self)
-        quit_action.setShortcut(QKeySequence("Ctrl+Q"))
-        quit_action.triggered.connect(self._quit)
-        file_menu.addAction(quit_action)
-
-        # Settings menu
-        settings_menu = menubar.addMenu("&Settings")
-        prefs_action = QAction("&Preferences...", self)
-        prefs_action.setToolTip("Open settings dialog")
-        prefs_action.triggered.connect(self._show_settings)
-        settings_menu.addAction(prefs_action)
-
-        # Help menu
-        help_menu = menubar.addMenu("&Help")
-        about_action = QAction("&About VoxLink", self)
-        about_action.triggered.connect(self._show_about)
-        help_menu.addAction(about_action)
-
-    def _setup_shortcuts(self) -> None:
-        """Register keyboard shortcuts."""
-        # Ctrl+M = toggle mute
-        mute_shortcut = QAction("Toggle Mute", self)
-        mute_shortcut.setShortcut(QKeySequence("Ctrl+M"))
-        mute_shortcut.triggered.connect(self._toggle_mute)
-        self.addAction(mute_shortcut)
-
-        # Ctrl+D = toggle deafen
-        deafen_shortcut = QAction("Toggle Deafen", self)
-        deafen_shortcut.setShortcut(QKeySequence("Ctrl+D"))
-        deafen_shortcut.triggered.connect(self._toggle_deafen)
-        self.addAction(deafen_shortcut)
-
-    def _restore_geometry(self) -> None:
-        settings = QSettings("VoxLink", "VoxLink")
-        geometry = settings.value("main_window/geometry")
-        if geometry is not None:
-            self.restoreGeometry(geometry)
-
-    def _save_geometry(self) -> None:
-        settings = QSettings("VoxLink", "VoxLink")
-        settings.setValue("main_window/geometry", self.saveGeometry())
-
-    # ---- Properties ----
-
-    @property
-    def channel_tree(self) -> ChannelTree:
-        return self._channel_tree
-
-    @property
-    def status_bar_widget(self) -> StatusBar:
-        return self._status_bar
-
     # ---- Slots: connection events ----
 
     def on_connected(self) -> None:
         """Handle successful server connection."""
-        self.setWindowTitle("VoxLink \u2014 Connected")
-        self._status_bar.set_connection_status("Connected")
-        self._info_area.append("Connected to server.")
-
-        # Populate channel tree
+        self.setWindowTitle("VoxLink — Connected")
+        self._server_page.status_bar.set_connection_status("Connected")
+        self._server_page.info_area.append("Connected to server.")
+        InfoBar.success(
+            "Connected", "Successfully connected to server",
+            parent=self, duration=3000, position=InfoBarPosition.TOP,
+        )
         channels = self._mumble_client.get_channels()
         users = self._mumble_client.get_users()
-        self._channel_tree.update_channels(channels, users)
+        self._server_page.channel_tree.update_channels(channels, users)
 
     def on_disconnected(self) -> None:
         """Handle server disconnection."""
-        self.setWindowTitle("VoxLink \u2014 Disconnected")
-        self._status_bar.set_connection_status("Disconnected")
-        self._channel_tree.clear()
-        self._channel_tree.setHeaderLabel("Channels")
-        self._info_area.append("Disconnected from server.")
+        self.setWindowTitle("VoxLink — Disconnected")
+        self._server_page.status_bar.set_connection_status("Disconnected")
+        self._server_page.channel_tree.clear()
+        self._server_page.channel_tree.setHeaderLabel("Channels")
+        self._server_page.info_area.append("Disconnected from server.")
 
     def on_error(self, message: str) -> None:
         """Handle connection error."""
         logger.error("Connection error: %s", message)
-        self._status_bar.set_connection_status(f"Error: {message}")
-        self._info_area.append(f"Error: {message}")
+        self._server_page.status_bar.set_connection_status(f"Error: {message}")
+        self._server_page.info_area.append(f"Error: {message}")
+        InfoBar.error(
+            "Error", message,
+            parent=self, duration=5000, position=InfoBarPosition.TOP,
+        )
 
     def on_channel_updated(self, channel_data: dict) -> None:
         """Handle channel tree update."""
         channels = self._mumble_client.get_channels()
         users = self._mumble_client.get_users()
-        self._channel_tree.update_channels(channels, users)
+        self._server_page.channel_tree.update_channels(channels, users)
 
     def on_user_joined(self, user_data: dict) -> None:
         """Handle user joining."""
         name = user_data.get("name", "Unknown")
-        self._info_area.append(f"User joined: {name}")
-        self._channel_tree.add_user(user_data)
+        self._server_page.info_area.append(f"User joined: {name}")
+        self._server_page.channel_tree.add_user(user_data)
 
     def on_user_left(self, user_data: dict) -> None:
         """Handle user leaving."""
         name = user_data.get("name", "Unknown")
-        self._info_area.append(f"User left: {name}")
-        self._channel_tree.remove_user(user_data)
+        self._server_page.info_area.append(f"User left: {name}")
+        self._server_page.channel_tree.remove_user(user_data)
 
     # ---- Actions ----
 
@@ -260,49 +273,37 @@ class MainWindow(QMainWindow):
             username=self._config.server.username,
             parent=self,
         )
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.exec():
             host = dlg.host_edit.text().strip()
             port = dlg.port_spin.value()
             username = dlg.username_edit.text().strip()
             if host and username:
-                self._info_area.append(f"Connecting to {host}:{port} as {username}...")
-                self._status_bar.set_connection_status("Connecting...")
+                self._server_page.info_area.append(f"Connecting to {host}:{port} as {username}...")
+                self._server_page.status_bar.set_connection_status("Connecting...")
                 self._mumble_client.connect_to_server(host, port, username)
 
     def _disconnect(self) -> None:
         self._mumble_client.disconnect()
 
-    def _quit(self) -> None:
-        self._save_geometry()
-        from PySide6.QtWidgets import QApplication
-        QApplication.instance().quit()  # type: ignore[union-attr]
-
-    def _show_settings(self) -> None:
-        from voxlink.ui.settings import SettingsDialog
-        dlg = SettingsDialog(self._config, self._device_manager, parent=self)
-        dlg.exec()
-
     def _show_about(self) -> None:
         from voxlink import __version__
-
-        QMessageBox.about(
-            self,
+        MessageBox(
             "About VoxLink",
-            f"VoxLink v{__version__}\n\n"
-            "Wayland-native Mumble voice chat client\n"
-            "Built with PySide6 and pymumble.",
-        )
+            f"VoxLink v{__version__}\n\nWayland-native Mumble voice chat client.\n"
+            "Built with PySide6, pymumble, and Fluent Design.",
+            self,
+        ).exec()
 
     def _on_join_channel(self, channel_id: int) -> None:
         self._mumble_client.join_channel(channel_id)
 
     def _toggle_mute(self) -> None:
         self._is_muted = not self._is_muted
-        self._status_bar.set_muted(self._is_muted)
+        self._server_page.status_bar.set_muted(self._is_muted)
 
     def _toggle_deafen(self) -> None:
         self._is_deafened = not self._is_deafened
-        self._status_bar.set_deafened(self._is_deafened)
+        self._server_page.status_bar.set_deafened(self._is_deafened)
 
     def _on_mute_toggled(self, muted: bool) -> None:
         self._is_muted = muted
@@ -311,6 +312,16 @@ class MainWindow(QMainWindow):
     def _on_deafen_toggled(self, deafened: bool) -> None:
         self._is_deafened = deafened
         logger.info("Deafen toggled: %s", deafened)
+
+    def _restore_geometry(self) -> None:
+        settings = QSettings("VoxLink", "VoxLink")
+        geometry = settings.value("main_window/geometry")
+        if geometry is not None:
+            self.restoreGeometry(geometry)
+
+    def _save_geometry(self) -> None:
+        settings = QSettings("VoxLink", "VoxLink")
+        settings.setValue("main_window/geometry", self.saveGeometry())
 
     # ---- Window events ----
 

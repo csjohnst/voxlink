@@ -8,8 +8,9 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QColor
 from PySide6.QtWidgets import QApplication
+from qfluentwidgets import setTheme, Theme, setThemeColor
 
 from voxlink.config import VoxLinkConfig
 
@@ -40,6 +41,10 @@ def run_app(config_path: str | None = None) -> int:
     # Set application icon
     if _ICON_PATH.exists():
         app.setWindowIcon(QIcon(str(_ICON_PATH)))
+
+    # Set Fluent theme before creating any widgets
+    setTheme(Theme.AUTO)
+    setThemeColor(QColor("#4ade80"))
 
     # Import here to avoid circular imports and ensure QApplication exists
     from voxlink.audio.devices import DeviceManager

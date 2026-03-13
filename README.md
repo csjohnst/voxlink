@@ -11,17 +11,25 @@ sudo pacman -S python python-pip pipewire pipewire-pulse opus qt6-wayland \
 
 For KDE Plasma, replace `xdg-desktop-portal-hyprland` with `xdg-desktop-portal-kde`.
 
-## Install
+## Install (Arch Linux package)
+
+Builds a self-contained single binary and installs it as a pacman package:
 
 ```bash
-# Clone
 git clone https://github.com/csjohnst/voxlink.git
 cd voxlink
+makepkg -si
+```
 
-# Install in editable mode
-pip install -e ".[dev]"
+This installs `/usr/bin/voxlink` with a desktop entry and icon. No Python runtime needed at install time — everything is bundled.
 
-# Or with evdev fallback support
+To uninstall: `sudo pacman -R voxlink`
+
+## Install (development)
+
+```bash
+git clone https://github.com/csjohnst/voxlink.git
+cd voxlink
 pip install -e ".[dev,evdev]"
 ```
 
@@ -29,16 +37,16 @@ pip install -e ".[dev,evdev]"
 
 ```bash
 # Launch the GUI
-python -m voxlink
+voxlink
 
 # Test connection to a server
-python -m voxlink --test-connection --server mumble.example.com --user testuser
+voxlink --test-connection --server mumble.example.com --user testuser
 
 # List audio devices
-python -m voxlink --list-devices
+voxlink --list-devices
 
 # Test PTT shortcut
-python -m voxlink --test-ptt
+voxlink --test-ptt
 ```
 
 ## Configuration

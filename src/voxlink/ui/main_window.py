@@ -143,10 +143,12 @@ class MainWindow(QMainWindow):
         file_menu = menubar.addMenu("&File")
 
         connect_action = QAction("&Connect...", self)
+        connect_action.setToolTip("Connect to a Mumble server")
         connect_action.triggered.connect(self._show_connect_dialog)
         file_menu.addAction(connect_action)
 
         disconnect_action = QAction("&Disconnect", self)
+        disconnect_action.setToolTip("Disconnect from the current server")
         disconnect_action.triggered.connect(self._disconnect)
         file_menu.addAction(disconnect_action)
 
@@ -160,6 +162,7 @@ class MainWindow(QMainWindow):
         # Settings menu
         settings_menu = menubar.addMenu("&Settings")
         prefs_action = QAction("&Preferences...", self)
+        prefs_action.setToolTip("Open settings dialog")
         prefs_action.triggered.connect(self._show_settings)
         settings_menu.addAction(prefs_action)
 
@@ -280,10 +283,13 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _show_about(self) -> None:
+        from voxlink import __version__
+
         QMessageBox.about(
             self,
             "About VoxLink",
-            "VoxLink - A Mumble client for Linux\n\n"
+            f"VoxLink v{__version__}\n\n"
+            "Wayland-native Mumble voice chat client\n"
             "Built with PySide6 and pymumble.",
         )
 

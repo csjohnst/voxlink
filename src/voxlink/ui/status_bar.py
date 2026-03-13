@@ -91,17 +91,20 @@ class StatusBar(QWidget):
             "QLabel { background-color: #555; color: white; "
             "border-radius: 4px; padding: 2px 6px; font-weight: bold; }"
         )
+        self._ptt_label.setToolTip("Push-to-Talk indicator")
         layout.addWidget(self._ptt_label)
 
         # Audio input level meter
         layout.addWidget(QLabel("In:"))
         self._level_meter = AudioLevelMeter()
+        self._level_meter.setToolTip("Input audio level")
         layout.addWidget(self._level_meter)
 
         # Mute button
         self._mute_btn = QPushButton("Mute")
         self._mute_btn.setCheckable(True)
         self._mute_btn.setFixedWidth(70)
+        self._mute_btn.setToolTip("Toggle microphone mute (Ctrl+M)")
         self._mute_btn.clicked.connect(self._on_mute_clicked)
         layout.addWidget(self._mute_btn)
 
@@ -109,6 +112,7 @@ class StatusBar(QWidget):
         self._deafen_btn = QPushButton("Deafen")
         self._deafen_btn.setCheckable(True)
         self._deafen_btn.setFixedWidth(70)
+        self._deafen_btn.setToolTip("Toggle audio deafen (Ctrl+D)")
         self._deafen_btn.clicked.connect(self._on_deafen_clicked)
         layout.addWidget(self._deafen_btn)
 

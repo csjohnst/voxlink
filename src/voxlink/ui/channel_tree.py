@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QTimer
 from PySide6.QtGui import QColor, QPixmap, QPainter, QIcon, QBrush
 from PySide6.QtWidgets import QTreeWidgetItem
 from qfluentwidgets import TreeWidget, RoundMenu, Action, FluentIcon, isDarkTheme, BodyLabel, Slider, MessageBox
@@ -103,6 +103,8 @@ class ChannelTree(TreeWidget):
         self.setIndentation(16)
         self._muted_sessions: set[int] = set()
         self._user_volumes: dict[int, float] = {}  # session -> volume multiplier
+        self._talking_sessions: set[int] = set()
+        self._talking_timers: dict[int, QTimer] = {}  # session -> decay timer
 
     def update_channels(self, channels: dict, users: dict | None = None) -> None:
         """Rebuild the channel tree from server data.
@@ -329,6 +331,48 @@ class ChannelTree(TreeWidget):
             new_vol = slider.value() / 100.0
             self._user_volumes[session_id] = new_vol
             self.user_volume_changed.emit(session_id, new_vol)
+
+    def set_user_talking(self, session_id: int) -> None:
+        """Mark a user as talking (green icon) with auto-decay."""
+        _ensure_icons()
+        if session_id not in self._talking_sessions:
+            self._talking_sessions.add(session_id)
+            # Find and update the icon
+            item = self._find_user_item(session_id)
+            if item is not None and session_id not in self._muted_sessions:
+                item.setIcon(0, _ICON_TALKING)  # type: ignore[arg-type]
+
+        # Reset or create the decay timer (200ms after last audio = stop talking)
+        timer = self._talking_timers.get(session_id)
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(lambda sid=session_id: self._on_talking_timeout(sid))
+            self._talking_timers[session_id] = timer
+        timer.start(200)
+
+    def _on_talking_timeout(self, session_id: int) -> None:
+        """Clear talking state after no audio for a short period."""
+        _ensure_icons()
+        self._talking_sessions.discard(session_id)
+        item = self._find_user_item(session_id)
+        if item is not None:
+            if session_id in self._muted_sessions:
+                item.setIcon(0, _ICON_MUTED)  # type: ignore[arg-type]
+            else:
+                item.setIcon(0, _ICON_NORMAL)  # type: ignore[arg-type]
+
+    def _find_user_item(self, session_id: int) -> QTreeWidgetItem | None:
+        """Find a user item by session ID across the whole tree."""
+        root = self.invisibleRootItem()
+        for i in range(root.childCount()):
+            child = root.child(i)
+            if child is None:
+                continue
+            found = self._find_user_in_subtree(child, session_id)
+            if found is not None:
+                return found
+        return None
 
     def is_user_muted(self, session_id: int) -> bool:
         """Check if a user is locally muted."""

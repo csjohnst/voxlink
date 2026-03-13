@@ -359,6 +359,7 @@ class MumbleClient(QObject):
         host: str | None = None,
         port: int | None = None,
         username: str | None = None,
+        _is_reconnect: bool = False,
     ) -> None:
         """Initiate connection to a Mumble server.
 
@@ -370,7 +371,8 @@ class MumbleClient(QObject):
 
         self._stopping = False
         self._auto_reconnect = True
-        self._reconnect_attempt = 0
+        if not _is_reconnect:
+            self._reconnect_attempt = 0
 
         resolved_host = host or self._config.host
         resolved_port = port or self._config.port
@@ -415,14 +417,26 @@ class MumbleClient(QObject):
         try:
             if self._mumble is None:
                 return
+            error_msg = "Connection timed out"
             success = self._mumble.wait_until_connected(timeout=10)
-            # pymumble can report "connected" even if the thread crashed
-            # right after the TLS handshake. Verify it's still alive.
-            if success and not self._mumble.is_alive():
-                logger.error("pymumble thread died despite reporting connected")
-                success = False
+            # pymumble releases ready_lock on both success AND failure,
+            # so wait_until_connected returns True even when the connection
+            # was rejected. Check the actual connection state and thread.
+            if success:
+                from mumble.constants import CONN_STATE
+                # Give the thread a moment to update state after lock release
+                time.sleep(0.1)
+                actual_state = self._mumble.connected
+                if actual_state != CONN_STATE.CONNECTED or not self._mumble.is_alive():
+                    logger.error(
+                        "Connection failed: pymumble state=%s, alive=%s",
+                        actual_state, self._mumble.is_alive(),
+                    )
+                    success = False
+                    error_msg = "Connection rejected by server"
             if success:
                 self._set_state(ConnectionState.CONNECTED)
+                self._reconnect_attempt = 0  # Reset backoff on successful connect
                 sa = self._mumble.send_audio
                 if sa:
                     logger.info(
@@ -437,7 +451,7 @@ class MumbleClient(QObject):
                 self.events.emit_connected()
             else:
                 self._set_state(ConnectionState.ERROR)
-                self.events.emit_error("Connection timed out")
+                self.events.emit_error(error_msg)
                 self._schedule_reconnect()
         except Exception as exc:
             logger.exception("Error waiting for connection")
@@ -543,8 +557,8 @@ class MumbleClient(QObject):
         logger.info("Attempting reconnect (attempt %d)", self._reconnect_attempt)
         # Clean up old instance
         self._cleanup_mumble()
-        # Re-connect using stored config
-        self.connect_to_server()
+        # Re-connect using stored config (preserve reconnect counter)
+        self.connect_to_server(_is_reconnect=True)
 
     def _cleanup_mumble(self) -> None:
         """Safely shut down the pymumble instance."""

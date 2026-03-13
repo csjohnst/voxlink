@@ -5,8 +5,8 @@ Wayland-native Mumble voice chat client for Arch Linux. Built for Hyprland and K
 ## System Dependencies
 
 ```bash
-sudo pacman -S python python-pip pipewire pipewire-pulse libopus qt6-wayland \
-  xdg-desktop-portal xdg-desktop-portal-hyprland python-pyside6
+sudo pacman -S python python-pip pipewire pipewire-pulse opus qt6-wayland \
+  xdg-desktop-portal xdg-desktop-portal-hyprland pyside6
 ```
 
 For KDE Plasma, replace `xdg-desktop-portal-hyprland` with `xdg-desktop-portal-kde`.

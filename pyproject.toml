@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "voxlink"
+version = "0.1.0"
+description = "Wayland-native Mumble voice chat client for Arch Linux"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [
+    { name = "Chris", email = "chris@example.com" },
+]
+dependencies = [
+    "PySide6>=6.6",
+    "pymumble @ git+https://git.sr.ht/~oopsbagel/pymumble",
+    "pulsectl>=24.1",
+    "pasimple>=0.0.2",
+    "dbus-next>=0.2.3",
+    "tomli>=2.0",
+    "tomli-w>=1.0",
+    "keyring>=25.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-qt>=4.4",
+]
+evdev = [
+    "evdev>=1.7",
+]
+
+[project.scripts]
+voxlink = "voxlink.__main__:main"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/voxlink"]

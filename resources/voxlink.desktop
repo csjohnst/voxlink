@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=VoxLink
+Comment=Wayland-native Mumble voice chat client
+Exec=voxlink
+Icon=voxlink
+Terminal=false
+Categories=Network;Audio;Chat;
+Keywords=mumble;voice;chat;voip;
+StartupWMClass=voxlink

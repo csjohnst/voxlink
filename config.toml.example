@@ -1,0 +1,24 @@
+[server]
+host = "mumble.example.com"
+port = 64738
+username = "chris"
+# password stored in system keyring, not plaintext
+
+[audio]
+input_device = ""           # PipeWire device name (leave empty for default)
+output_device = ""          # PipeWire device name (leave empty for default)
+input_volume = 80           # 0-100
+output_volume = 100         # 0-100
+quality = "high"            # low / medium / high (maps to opus bitrate)
+noise_suppression = true
+
+[ptt]
+mode = "ptt"                # "ptt" or "vad" or "continuous"
+shortcut_method = "portal"  # "portal" or "evdev"
+evdev_key = "KEY_F13"       # Only used if method = evdev
+vad_threshold = 0.02        # Only used if mode = vad
+
+[ui]
+start_minimized = false
+show_tray_icon = true
+compact_mode = false

@@ -1,6 +1,6 @@
 # Maintainer: Chris Johnston
 pkgname=voxlink
-pkgver=0.1.1
+pkgver=0.1.2
 pkgrel=1
 pkgdesc="Wayland-native Mumble voice chat client"
 arch=('x86_64')
@@ -23,11 +23,11 @@ optdepends=(
     'xdg-desktop-portal-hyprland: Global shortcuts on Hyprland'
     'xdg-desktop-portal-kde: Global shortcuts on KDE Plasma'
 )
-source=("git+https://github.com/csjohnst/voxlink.git#tag=v${pkgver}")
+source=("${pkgname}-${pkgver}::git+https://github.com/csjohnst/voxlink.git#tag=v${pkgver}")
 sha256sums=('SKIP')
 
 build() {
-    cd "$srcdir/$pkgname"
+    cd "$srcdir/${pkgname}-${pkgver}"
 
     # Create isolated venv for building
     python -m venv --system-site-packages buildenv
@@ -43,7 +43,7 @@ build() {
 }
 
 package() {
-    cd "$srcdir/$pkgname"
+    cd "$srcdir/${pkgname}-${pkgver}"
 
     # Install binary
     install -Dm755 "dist/voxlink" "$pkgdir/usr/bin/voxlink"

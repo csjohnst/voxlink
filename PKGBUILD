@@ -27,7 +27,7 @@ source=("git+https://github.com/csjohnst/voxlink.git#tag=v${pkgver}")
 sha256sums=('SKIP')
 
 build() {
-    cd "$srcdir/voxlink"
+    cd "$srcdir/$pkgname"
 
     # Create isolated venv for building
     python -m venv --system-site-packages buildenv
@@ -43,7 +43,7 @@ build() {
 }
 
 package() {
-    cd "$srcdir/voxlink"
+    cd "$srcdir/$pkgname"
 
     # Install binary
     install -Dm755 "dist/voxlink" "$pkgdir/usr/bin/voxlink"

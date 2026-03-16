@@ -50,8 +50,8 @@ class PortalShortcuts(QObject):
     def is_available() -> bool:
         """Check if the GlobalShortcuts portal is available via D-Bus."""
         try:
-            from dbus_next.aio import MessageBus
-            from dbus_next import BusType
+            from dbus_next import BusType  # noqa: F401
+            from dbus_next.aio import MessageBus  # noqa: F401
         except ImportError:
             logger.debug("dbus-next not available")
             return False
@@ -118,16 +118,14 @@ class PortalShortcuts(QObject):
                 for task in pending:
                     task.cancel()
                 if pending:
-                    self._loop.run_until_complete(
-                        asyncio.gather(*pending, return_exceptions=True)
-                    )
+                    self._loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
             except Exception:
                 pass
 
     async def _async_start(self) -> None:
         """Async setup: connect to D-Bus, create session, bind shortcuts."""
-        from dbus_next.aio import MessageBus
         from dbus_next import BusType, Variant
+        from dbus_next.aio import MessageBus
 
         try:
             self._bus = await MessageBus(bus_type=BusType.SESSION).connect()
@@ -138,14 +136,10 @@ class PortalShortcuts(QObject):
 
         try:
             introspection = await self._bus.introspect(_BUS_NAME, _OBJECT_PATH)
-            proxy = self._bus.get_proxy_object(
-                _BUS_NAME, _OBJECT_PATH, introspection
-            )
+            proxy = self._bus.get_proxy_object(_BUS_NAME, _OBJECT_PATH, introspection)
             shortcuts_iface = proxy.get_interface(_IFACE_SHORTCUTS)
         except Exception:
-            logger.error(
-                "Failed to get GlobalShortcuts interface", exc_info=True
-            )
+            logger.error("Failed to get GlobalShortcuts interface", exc_info=True)
             self.available_changed.emit(False)
             return
 
@@ -211,10 +205,10 @@ class PortalShortcuts(QObject):
         request_path = f"/org/freedesktop/portal/desktop/request/{sender}/{token}"
 
         # Set up a future to wait for the Response signal on the Request object
-        response_future: asyncio.Future[Any] = self._loop.create_future()  # type: ignore[union-attr]
+        response_future: asyncio.Future[Any] = self._loop.create_future()  # type: ignore[union-attr]  # noqa: F841
 
         try:
-            req_introspection = await self._bus.introspect(
+            req_introspection = await self._bus.introspect(  # noqa: F841
                 _BUS_NAME, request_path
             )
         except Exception:
@@ -228,13 +222,11 @@ class PortalShortcuts(QObject):
             "session_handle_token": Variant("s", "voxlink_ptt"),
         }
 
-        result = await shortcuts_iface.call_create_session(options)  # type: ignore[attr-defined]
+        result = await shortcuts_iface.call_create_session(options)  # type: ignore[attr-defined]  # noqa: F841
 
         # result is the request object path; the actual session handle
         # comes from the portal session_handle_token
-        session_path = (
-            f"/org/freedesktop/portal/desktop/session/{sender}/voxlink_ptt"
-        )
+        session_path = f"/org/freedesktop/portal/desktop/session/{sender}/voxlink_ptt"
         return session_path
 
     def _on_activated(
@@ -245,9 +237,7 @@ class PortalShortcuts(QObject):
         options: dict[str, Any],
     ) -> None:
         """Handle the Activated signal from the portal."""
-        logger.debug(
-            "Portal shortcut activated: %s (ts=%d)", shortcut_id, timestamp
-        )
+        logger.debug("Portal shortcut activated: %s (ts=%d)", shortcut_id, timestamp)
         if shortcut_id == _PTT_SHORTCUT_ID:
             self.activated.emit()
 
@@ -259,9 +249,7 @@ class PortalShortcuts(QObject):
         options: dict[str, Any],
     ) -> None:
         """Handle the Deactivated signal from the portal."""
-        logger.debug(
-            "Portal shortcut deactivated: %s (ts=%d)", shortcut_id, timestamp
-        )
+        logger.debug("Portal shortcut deactivated: %s (ts=%d)", shortcut_id, timestamp)
         if shortcut_id == _PTT_SHORTCUT_ID:
             self.deactivated.emit()
 
@@ -278,8 +266,8 @@ class PortalShortcuts(QObject):
 
 async def _check_portal_available() -> bool:
     """Check if the GlobalShortcuts portal interface exists on the bus."""
-    from dbus_next.aio import MessageBus
     from dbus_next import BusType
+    from dbus_next.aio import MessageBus
 
     bus = await MessageBus(bus_type=BusType.SESSION).connect()
     try:

@@ -7,10 +7,9 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QCoreApplication
-from PySide6.QtGui import QIcon, QColor
+from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import QApplication
-from qfluentwidgets import setTheme, Theme, setThemeColor
+from qfluentwidgets import Theme, setTheme, setThemeColor
 
 from voxlink.config import VoxLinkConfig
 
@@ -48,8 +47,8 @@ def run_app(config_path: str | None = None) -> int:
     setThemeColor(QColor("#4ade80"))
 
     # Import here to avoid circular imports and ensure QApplication exists
-    from voxlink.audio.devices import DeviceManager
     from voxlink.audio.capture import CaptureManager
+    from voxlink.audio.devices import DeviceManager
     from voxlink.audio.playback import PlaybackManager
     from voxlink.mumble.client import MumbleClient
     from voxlink.shortcuts.manager import ShortcutManager
@@ -82,12 +81,21 @@ def run_app(config_path: str | None = None) -> int:
 
     # Wire PTT indicator on status bar
     shortcut_manager.ptt_pressed.connect(lambda: main_window.status_bar_widget.set_ptt_active(True))
-    shortcut_manager.ptt_released.connect(lambda: main_window.status_bar_widget.set_ptt_active(False))
+    shortcut_manager.ptt_released.connect(
+        lambda: main_window.status_bar_widget.set_ptt_active(False)
+    )
 
     # Show which PTT method is active
-    _METHOD_LABELS = {"portal": "PTT (Portal)", "evdev": "PTT (evdev)", "qt": "PTT (Qt, focused only)", "none": "PTT (none)"}
+    _METHOD_LABELS = {
+        "portal": "PTT (Portal)",
+        "evdev": "PTT (evdev)",
+        "qt": "PTT (Qt, focused only)",
+        "none": "PTT (none)",
+    }
     shortcut_manager.method_changed.connect(
-        lambda m: main_window._server_page.info_area.append(f"Shortcut method: {_METHOD_LABELS.get(m, m)}")
+        lambda m: main_window._server_page.info_area.append(
+            f"Shortcut method: {_METHOD_LABELS.get(m, m)}"
+        )
     )
 
     # Wire capture level to status bar input meter
@@ -100,16 +108,25 @@ def run_app(config_path: str | None = None) -> int:
     def _send_audio_if_not_muted(pcm_data: bytes) -> None:
         _send_count[0] += 1
         if _send_count[0] % 50 == 1:
-            logger.info("_send_audio_if_not_muted called (#%d), muted=%s, %d bytes",
-                        _send_count[0], main_window._is_muted, len(pcm_data))
+            logger.info(
+                "_send_audio_if_not_muted called (#%d), muted=%s, %d bytes",
+                _send_count[0],
+                main_window._is_muted,
+                len(pcm_data),
+            )
         if not main_window._is_muted:
             mumble_client.send_audio(pcm_data)
 
     def _play_audio_filtered(session_id: int, pcm_data: bytes) -> None:
         _recv_count[0] += 1
         if _recv_count[0] % 50 == 1:
-            logger.info("_play_audio_filtered called (#%d), session=%d, deafened=%s, %d bytes",
-                        _recv_count[0], session_id, main_window._is_deafened, len(pcm_data))
+            logger.info(
+                "_play_audio_filtered called (#%d), session=%d, deafened=%s, %d bytes",
+                _recv_count[0],
+                session_id,
+                main_window._is_deafened,
+                len(pcm_data),
+            )
         if main_window._is_deafened:
             return
         if main_window.channel_tree.is_user_muted(session_id):
@@ -117,6 +134,7 @@ def run_app(config_path: str | None = None) -> int:
         vol = main_window.channel_tree.get_user_volume(session_id)
         if vol != 1.0:
             import struct
+
             n_samples = len(pcm_data) // 2
             samples = struct.unpack(f"<{n_samples}h", pcm_data)
             scaled = [max(-32768, min(32767, int(s * vol))) for s in samples]
@@ -128,15 +146,19 @@ def run_app(config_path: str | None = None) -> int:
     # This avoids latency and potential signal-delivery issues when emitting
     # from plain threading.Thread (capture) or pymumble's network thread.
     from PySide6.QtCore import Qt
+
     capture_manager.audio_captured.connect(
-        _send_audio_if_not_muted, Qt.ConnectionType.DirectConnection)
+        _send_audio_if_not_muted, Qt.ConnectionType.DirectConnection
+    )
     mumble_client.audio_received_from_user.connect(
-        _play_audio_filtered, Qt.ConnectionType.DirectConnection)
+        _play_audio_filtered, Qt.ConnectionType.DirectConnection
+    )
 
     # Wire talking indicator (queued to main thread for UI safety)
     def _on_user_audio(session_id: int, pcm_data: bytes) -> None:
         main_window.channel_tree.set_user_talking(session_id)
         main_window.compact_overlay.set_user_talking(session_id)
+
     mumble_client.audio_received_from_user.connect(_on_user_audio)
 
     # Wire mumble events to UI
@@ -193,9 +215,14 @@ def run_app(config_path: str | None = None) -> int:
 
     # Auto-connect if configured
     if config.server.auto_connect and config.server.host:
-        logger.info("Auto-connecting to %s:%d as %s",
-                     config.server.host, config.server.port, config.server.username)
+        logger.info(
+            "Auto-connecting to %s:%d as %s",
+            config.server.host,
+            config.server.port,
+            config.server.username,
+        )
         from PySide6.QtCore import QTimer
+
         QTimer.singleShot(500, lambda: mumble_client.connect_to_server())
 
     # Graceful shutdown

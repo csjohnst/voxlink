@@ -5,10 +5,19 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Signal, Qt, QTimer
-from PySide6.QtGui import QColor, QPixmap, QPainter, QIcon, QBrush
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QTreeWidgetItem
-from qfluentwidgets import TreeWidget, RoundMenu, Action, FluentIcon, isDarkTheme, BodyLabel, Slider, MessageBox
+from qfluentwidgets import (
+    Action,
+    BodyLabel,
+    FluentIcon,
+    MessageBox,
+    RoundMenu,
+    Slider,
+    TreeWidget,
+    isDarkTheme,
+)
 
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QWidget
@@ -53,21 +62,11 @@ def _ensure_icons() -> None:
     dark = isDarkTheme()
 
     # Adapt icon colours for dark/light theme
-    _ICON_NORMAL = _circle_icon(
-        QColor(180, 180, 180) if dark else QColor(140, 140, 140)
-    )
-    _ICON_TALKING = _circle_icon(
-        QColor("#4ade80") if dark else QColor("#22c55e")
-    )
-    _ICON_MUTED = _circle_icon(
-        QColor("#ef4444") if dark else QColor("#dc2626")
-    )
-    _ICON_DEAFENED = _circle_icon(
-        QColor("#fbbf24") if dark else QColor("#eab308")
-    )
-    _ICON_CHANNEL = _circle_icon(
-        QColor("#60a5fa") if dark else QColor("#3b82f6")
-    )
+    _ICON_NORMAL = _circle_icon(QColor(180, 180, 180) if dark else QColor(140, 140, 140))
+    _ICON_TALKING = _circle_icon(QColor("#4ade80") if dark else QColor("#22c55e"))
+    _ICON_MUTED = _circle_icon(QColor("#ef4444") if dark else QColor("#dc2626"))
+    _ICON_DEAFENED = _circle_icon(QColor("#fbbf24") if dark else QColor("#eab308"))
+    _ICON_CHANNEL = _circle_icon(QColor("#60a5fa") if dark else QColor("#3b82f6"))
 
 
 def _user_icon(user_data: dict) -> QIcon:

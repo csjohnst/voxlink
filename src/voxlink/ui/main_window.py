@@ -5,17 +5,25 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QSettings, QTimer, Qt
+from PySide6.QtCore import QSettings, Qt, QTimer
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QSplitter,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
 )
 from qfluentwidgets import (
-    FluentWindow, FluentIcon, NavigationItemPosition,
-    TextEdit, LineEdit, SpinBox,
-    SubtitleLabel, BodyLabel,
+    BodyLabel,
+    FluentIcon,
+    FluentWindow,
+    InfoBar,
+    InfoBarPosition,
+    LineEdit,
     MessageBox,
-    InfoBar, InfoBarPosition,
+    NavigationItemPosition,
     SimpleCardWidget,
+    SpinBox,
+    SubtitleLabel,
+    TextEdit,
 )
 from qfluentwidgets.components.dialog_box.message_box_base import MessageBoxBase
 
@@ -25,6 +33,7 @@ from voxlink.ui.status_bar import StatusBar
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QCloseEvent
+
     from voxlink.audio.capture import CaptureManager
     from voxlink.audio.devices import DeviceManager
     from voxlink.audio.playback import PlaybackManager
@@ -156,6 +165,7 @@ class MainWindow(FluentWindow):
         # Settings page - try to import the real one, fall back to placeholder
         try:
             from voxlink.ui.settings import SettingsPage
+
             self._settings_page = SettingsPage(config, device_manager)
         except ImportError:
             self._settings_page = _SettingsPagePlaceholder(config, device_manager)
@@ -182,7 +192,9 @@ class MainWindow(FluentWindow):
         )
 
         self.addSubInterface(
-            self._settings_page, FluentIcon.SETTING, "Settings",
+            self._settings_page,
+            FluentIcon.SETTING,
+            "Settings",
             position=NavigationItemPosition.BOTTOM,
         )
 
@@ -234,8 +246,11 @@ class MainWindow(FluentWindow):
         self._server_page.status_bar.set_connection_status("Connected")
         self._server_page.info_area.append("Connected to server.")
         InfoBar.success(
-            "Connected", "Successfully connected to server",
-            parent=self, duration=3000, position=InfoBarPosition.TOP,
+            "Connected",
+            "Successfully connected to server",
+            parent=self,
+            duration=3000,
+            position=InfoBarPosition.TOP,
         )
         self._refresh_tree()
         # Refresh again after a short delay to pick up late-arriving user data
@@ -265,8 +280,11 @@ class MainWindow(FluentWindow):
         self._server_page.status_bar.set_connection_status(f"Error: {message}")
         self._server_page.info_area.append(f"Error: {message}")
         InfoBar.error(
-            "Error", message,
-            parent=self, duration=5000, position=InfoBarPosition.TOP,
+            "Error",
+            message,
+            parent=self,
+            duration=5000,
+            position=InfoBarPosition.TOP,
         )
 
     def on_channel_updated(self, channel_data: dict) -> None:
@@ -314,6 +332,7 @@ class MainWindow(FluentWindow):
 
     def _show_about(self) -> None:
         from voxlink import __version__
+
         MessageBox(
             "About VoxLink",
             f"VoxLink v{__version__}\n\nWayland-native Mumble voice chat client.\n"

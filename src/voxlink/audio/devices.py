@@ -7,7 +7,6 @@ import threading
 from dataclasses import dataclass
 
 import pulsectl
-
 from PySide6.QtCore import QObject, Signal
 
 logger = logging.getLogger(__name__)
@@ -51,8 +50,7 @@ class DeviceManager(QObject):
                 AudioDevice(
                     name=s.name,
                     description=s.description,
-                    is_monitor=s.monitor_of_sink != 0xFFFFFFFF
-                    and s.monitor_of_sink is not None,
+                    is_monitor=s.monitor_of_sink != 0xFFFFFFFF and s.monitor_of_sink is not None,
                 )
                 for s in sources
             ]

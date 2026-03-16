@@ -9,12 +9,10 @@ import sys
 import threading
 import time
 
-from PySide6.QtCore import QObject, QTimer, Signal
-
 import mumble as pymumble
-from mumble.audio import AUDIO_CODEC
 from mumble.constants import UDP_MSG_TYPE
 from mumble.mumble import MumbleUDP
+from PySide6.QtCore import QObject, QTimer, Signal
 
 from voxlink.config import ServerConfig
 from voxlink.mumble.events import MumbleEvents
@@ -130,11 +128,15 @@ def _patch_sound_received(mumble_obj) -> None:
 
         logger.debug(
             "Legacy audio: session=%d, seq=%d, opus_len=%d, terminator=%s",
-            session_id, sequence, opus_len, is_terminator,
+            session_id,
+            sequence,
+            opus_len,
+            is_terminator,
         )
 
         # Build a fake protobuf Audio message
         from mumble import MumbleUDP_pb2
+
         audio_pb = MumbleUDP_pb2.Audio()
         audio_pb.sender_session = session_id
         audio_pb.frame_number = sequence
@@ -154,18 +156,22 @@ def _encode_varint(value: int) -> bytes:
     elif 0 <= value < 0x4000:
         return bytes([0x80 | ((value >> 8) & 0x3F), value & 0xFF])
     elif 0 <= value < 0x200000:
-        return bytes([
-            0xC0 | ((value >> 16) & 0x1F),
-            (value >> 8) & 0xFF,
-            value & 0xFF,
-        ])
+        return bytes(
+            [
+                0xC0 | ((value >> 16) & 0x1F),
+                (value >> 8) & 0xFF,
+                value & 0xFF,
+            ]
+        )
     elif 0 <= value < 0x10000000:
-        return bytes([
-            0xE0 | ((value >> 24) & 0x0F),
-            (value >> 16) & 0xFF,
-            (value >> 8) & 0xFF,
-            value & 0xFF,
-        ])
+        return bytes(
+            [
+                0xE0 | ((value >> 24) & 0x0F),
+                (value >> 16) & 0xFF,
+                (value >> 8) & 0xFF,
+                value & 0xFF,
+            ]
+        )
     else:
         return bytes([0xF0]) + struct.pack("!I", value & 0xFFFFFFFF)
 
@@ -180,7 +186,7 @@ def _patch_send_audio(mumble_obj) -> None:
       varint: opus_len | (terminator << 13)
       bytes:  opus payload
     """
-    import socket
+
     from mumble.constants import TCP_MSG_TYPE
 
     sa = mumble_obj.send_audio
@@ -199,27 +205,18 @@ def _patch_send_audio(mumble_obj) -> None:
 
         samples = int(sa.encoder_framesize * SAMPLE_RATE * 2 * sa.channels)
 
-        while (
-            len(sa.pcm) > 0
-            and sa.sequence_last_time + sa.audio_per_packet <= time.time()
-        ):
+        while len(sa.pcm) > 0 and sa.sequence_last_time + sa.audio_per_packet <= time.time():
             current_time = time.time()
             if sa.sequence_last_time + SEQUENCE_RESET_INTERVAL <= current_time:
                 sa.sequence = 0
                 sa.sequence_start_time = current_time
                 sa.sequence_last_time = current_time
             elif sa.sequence_last_time + (sa.audio_per_packet * 2) <= current_time:
-                sa.sequence = int(
-                    (current_time - sa.sequence_start_time) / SEQUENCE_DURATION
-                )
-                sa.sequence_last_time = sa.sequence_start_time + (
-                    sa.sequence * SEQUENCE_DURATION
-                )
+                sa.sequence = int((current_time - sa.sequence_start_time) / SEQUENCE_DURATION)
+                sa.sequence_last_time = sa.sequence_start_time + (sa.sequence * SEQUENCE_DURATION)
             else:
                 sa.sequence += int(sa.audio_per_packet / SEQUENCE_DURATION)
-                sa.sequence_last_time = sa.sequence_start_time + (
-                    sa.sequence * SEQUENCE_DURATION
-                )
+                sa.sequence_last_time = sa.sequence_start_time + (sa.sequence * SEQUENCE_DURATION)
 
             payload = bytearray()
             audio_encoded = 0
@@ -233,9 +230,7 @@ def _patch_send_audio(mumble_obj) -> None:
                     to_encode += b"\x00" * (samples - len(to_encode))
 
                 try:
-                    encoded = sa.encoder.encode(
-                        to_encode, len(to_encode) // (2 * sa.channels)
-                    )
+                    encoded = sa.encoder.encode(to_encode, len(to_encode) // (2 * sa.channels))
                 except opuslib.exceptions.OpusError:
                     encoded = b""
 
@@ -244,7 +239,8 @@ def _patch_send_audio(mumble_obj) -> None:
 
             sa.Log.debug(
                 "audio packet to send (legacy): sequence:%d, type:OPUS, length:%d",
-                sa.sequence, len(payload),
+                sa.sequence,
+                len(payload),
             )
 
             # Build legacy format packet
@@ -263,7 +259,7 @@ def _patch_send_audio(mumble_obj) -> None:
                 while len(tcppacket) > 0:
                     sent = mumble_obj.control_socket.send(tcppacket)
                     if sent < 0:
-                        raise socket.error("Server socket error")
+                        raise OSError("Server socket error")
                     tcppacket = tcppacket[sent:]
             else:
                 mumble_obj.udp_thread.encrypt_and_send_message(msg)
@@ -283,9 +279,19 @@ class ConnectionState(enum.Enum):
 def _user_to_dict(user) -> dict:
     """Extract user information into a plain dict."""
     info: dict = {}
-    for attr in ("session", "name", "channel_id", "mute", "deaf",
-                 "self_mute", "self_deaf", "suppress", "comment",
-                 "priority_speaker", "recording"):
+    for attr in (
+        "session",
+        "name",
+        "channel_id",
+        "mute",
+        "deaf",
+        "self_mute",
+        "self_deaf",
+        "suppress",
+        "comment",
+        "priority_speaker",
+        "recording",
+    ):
         try:
             info[attr] = getattr(user, attr, None)
         except Exception:
@@ -300,8 +306,7 @@ def _channel_to_dict(channel) -> dict:
         info["channel_id"] = channel.get_id()
     except Exception:
         pass
-    for prop in ("name", "parent", "description", "temporary",
-                 "position", "max_users"):
+    for prop in ("name", "parent", "description", "temporary", "position", "max_users"):
         try:
             info[prop] = channel.get_property(prop)
         except Exception:
@@ -325,12 +330,10 @@ class MumbleClient(QObject):
     audio_received_from_user = Signal(int, bytes)  # session_id, pcm_data
 
     # Auto-reconnect settings
-    _RECONNECT_BASE = 1.0    # seconds
-    _RECONNECT_MAX = 30.0    # seconds
+    _RECONNECT_BASE = 1.0  # seconds
+    _RECONNECT_MAX = 30.0  # seconds
 
-    def __init__(
-        self, config: ServerConfig, parent: QObject | None = None
-    ) -> None:
+    def __init__(self, config: ServerConfig, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._config = config
         self._state = ConnectionState.DISCONNECTED
@@ -428,13 +431,15 @@ class MumbleClient(QObject):
             # was rejected. Check the actual connection state and thread.
             if success:
                 from mumble.constants import CONN_STATE
+
                 # Give the thread a moment to update state after lock release
                 time.sleep(0.1)
                 actual_state = self._mumble.connected
                 if actual_state != CONN_STATE.CONNECTED or not self._mumble.is_alive():
                     logger.error(
                         "Connection failed: pymumble state=%s, alive=%s",
-                        actual_state, self._mumble.is_alive(),
+                        actual_state,
+                        self._mumble.is_alive(),
                     )
                     success = False
                     error_msg = "Connection rejected by server"
@@ -445,7 +450,9 @@ class MumbleClient(QObject):
                 if sa:
                     logger.info(
                         "Audio encoder state: codec=%s, encoder=%s, framesize=%s",
-                        sa.codec, sa.encoder, sa.encoder_framesize,
+                        sa.codec,
+                        sa.encoder,
+                        sa.encoder_framesize,
                     )
                     # Patch send_audio to use legacy format for older servers
                     _patch_send_audio(self._mumble)
@@ -524,7 +531,7 @@ class MumbleClient(QObject):
         pymumble provides decoded PCM: 48kHz, 16-bit signed, mono.
         """
         pcm = soundchunk.pcm
-        session = getattr(user, 'session', 0)
+        session = getattr(user, "session", 0)
         logger.info("Audio received from session %d: %d bytes", session, len(pcm))
         self.events.emit_audio_received(pcm)
         self.audio_received.emit(pcm)  # keep for backward compat
@@ -538,7 +545,7 @@ class MumbleClient(QObject):
             return
 
         delay = min(
-            self._RECONNECT_BASE * (2 ** self._reconnect_attempt),
+            self._RECONNECT_BASE * (2**self._reconnect_attempt),
             self._RECONNECT_MAX,
         )
         self._reconnect_attempt += 1
@@ -599,7 +606,8 @@ class MumbleClient(QObject):
         if sa.encoder_framesize is None:
             logger.warning(
                 "Audio dropped: encoder not ready (codec=%s, encoder=%s)",
-                sa.codec, sa.encoder,
+                sa.codec,
+                sa.encoder,
             )
             return
         try:

@@ -66,7 +66,7 @@ class CaptureManager(QObject):
 
     def _capture_loop(self) -> None:
         """Blocking capture loop running on a dedicated thread."""
-        from pasimple import PaSimple, PA_STREAM_RECORD, PA_SAMPLE_S16LE, PaSimpleError
+        from pasimple import PA_SAMPLE_S16LE, PA_STREAM_RECORD, PaSimple, PaSimpleError
 
         device = self._config.input_device or None
         stream = None

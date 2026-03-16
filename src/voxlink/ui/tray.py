@@ -5,10 +5,9 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QColor, QIcon, QPixmap, QPainter, QBrush
+from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QMainWindow, QSystemTrayIcon
-
-from qfluentwidgets import SystemTrayMenu, Action, FluentIcon, isDarkTheme
+from qfluentwidgets import Action, FluentIcon, SystemTrayMenu
 
 from voxlink.config import UIConfig
 

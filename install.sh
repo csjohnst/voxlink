@@ -1,5 +1,16 @@
 #!/bin/bash
 set -e
+
+echo "WARNING: This install method is deprecated."
+echo "The preferred installation method is: makepkg -si"
+echo "See README.md for details."
+echo ""
+read -rp "Continue with legacy venv install anyway? [y/N] " reply
+if [[ ! "$reply" =~ ^[Yy]$ ]]; then
+  echo "Aborted. Use 'makepkg -si' instead."
+  exit 0
+fi
+
 echo "=== VoxLink Installer for Arch Linux ==="
 
 # System deps

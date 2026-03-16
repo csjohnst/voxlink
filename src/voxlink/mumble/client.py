@@ -387,9 +387,13 @@ class MumbleClient(QObject):
                 port=resolved_port,
                 reconnect=False,  # we handle reconnect ourselves
                 force_tcp_only=True,
-                debug=True,
             )
             self._mumble.daemon = True
+            # pymumble captures threading.current_thread() as parent_thread
+            # and exits its main loop when parent_thread dies. On reconnect,
+            # we're called from a threading.Timer thread that dies immediately
+            # after connect_to_server returns. Pin to the main thread instead.
+            self._mumble.parent_thread = threading.main_thread()
 
             # Patch to handle legacy audio format from older servers/clients
             _patch_sound_received(self._mumble)

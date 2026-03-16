@@ -3,15 +3,10 @@
 from __future__ import annotations
 
 import logging
-import sys
-from dataclasses import dataclass, field, fields, asdict
+import tomllib
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib
 
 import tomli_w
 

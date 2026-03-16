@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-import time
 import logging
+import time
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, QTimer, QPoint, Signal
-from PySide6.QtGui import QColor, QPainter, QBrush, QPen, QFont, QMouseEvent
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy
+from PySide6.QtCore import QPoint, Qt, QTimer, Signal
+from PySide6.QtGui import QBrush, QColor, QMouseEvent, QPainter, QPen
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 if TYPE_CHECKING:
-    from PySide6.QtWidgets import QMainWindow
+    pass
 
 logger = logging.getLogger(__name__)
 

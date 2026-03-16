@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Signal, Qt
-from PySide6.QtGui import QPainter, QColor
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QSizePolicy
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QPainter
+from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QWidget
 from qfluentwidgets import (
     BodyLabel,
-    ToggleToolButton,
     FluentIcon,
     PillPushButton,
+    ToggleToolButton,
     ToolTipFilter,
     ToolTipPosition,
     isDarkTheme,
@@ -134,16 +134,16 @@ class StatusBar(QWidget):
 
         # Connection status
         self._status_label = BodyLabel("Disconnected")
-        self._status_label.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
+        self._status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self._status_label)
 
     def _on_mute_clicked(self) -> None:
         checked = self._mute_btn.isChecked()
         self._is_muted = checked
         self._mute_btn.setIcon(FluentIcon.MUTE if checked else FluentIcon.MICROPHONE)
-        self._mute_btn.setToolTip("Unmute (Ctrl+M)" if checked else "Toggle microphone mute (Ctrl+M)")
+        self._mute_btn.setToolTip(
+            "Unmute (Ctrl+M)" if checked else "Toggle microphone mute (Ctrl+M)"
+        )
         self.mute_toggled.emit(checked)
 
     def _on_deafen_clicked(self) -> None:
@@ -180,9 +180,7 @@ class StatusBar(QWidget):
         self._mute_btn.setChecked(muted)
         self._is_muted = muted
         self._mute_btn.setIcon(FluentIcon.MUTE if muted else FluentIcon.MICROPHONE)
-        self._mute_btn.setToolTip(
-            "Unmute (Ctrl+M)" if muted else "Toggle microphone mute (Ctrl+M)"
-        )
+        self._mute_btn.setToolTip("Unmute (Ctrl+M)" if muted else "Toggle microphone mute (Ctrl+M)")
         self.mute_toggled.emit(muted)
 
     def set_deafened(self, deafened: bool) -> None:

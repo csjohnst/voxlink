@@ -97,7 +97,7 @@ class PlaybackManager(QObject):
 
     def _playback_loop(self) -> None:
         """Blocking playback loop running on a dedicated thread."""
-        from pasimple import PaSimple, PA_STREAM_PLAYBACK, PA_SAMPLE_S16LE, PaSimpleError
+        from pasimple import PA_SAMPLE_S16LE, PA_STREAM_PLAYBACK, PaSimple, PaSimpleError
 
         device = self._config.output_device or None
         stream = None

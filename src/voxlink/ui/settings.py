@@ -6,25 +6,23 @@ import logging
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout
-
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
-    ScrollArea,
-    SubtitleLabel,
     BodyLabel,
     ComboBox,
-    Slider,
+    InfoBar,
     LineEdit,
     PasswordLineEdit,
-    SwitchButton,
-    SimpleCardWidget,
     PrimaryPushButton,
     PushButton,
+    ScrollArea,
+    SimpleCardWidget,
+    Slider,
     SpinBox,
-    setTheme,
+    SubtitleLabel,
+    SwitchButton,
     Theme,
-    InfoBar,
-    InfoBarPosition,
+    setTheme,
 )
 
 from voxlink.config import VoxLinkConfig
@@ -41,14 +39,22 @@ def _qt_key_to_evdev_name(qt_key: int) -> str | None:
 
     # Common mappings
     _MAP = {
-        _Qt.Key.Key_F1: "KEY_F1", _Qt.Key.Key_F2: "KEY_F2",
-        _Qt.Key.Key_F3: "KEY_F3", _Qt.Key.Key_F4: "KEY_F4",
-        _Qt.Key.Key_F5: "KEY_F5", _Qt.Key.Key_F6: "KEY_F6",
-        _Qt.Key.Key_F7: "KEY_F7", _Qt.Key.Key_F8: "KEY_F8",
-        _Qt.Key.Key_F9: "KEY_F9", _Qt.Key.Key_F10: "KEY_F10",
-        _Qt.Key.Key_F11: "KEY_F11", _Qt.Key.Key_F12: "KEY_F12",
-        _Qt.Key.Key_F13: "KEY_F13", _Qt.Key.Key_F14: "KEY_F14",
-        _Qt.Key.Key_F15: "KEY_F15", _Qt.Key.Key_F16: "KEY_F16",
+        _Qt.Key.Key_F1: "KEY_F1",
+        _Qt.Key.Key_F2: "KEY_F2",
+        _Qt.Key.Key_F3: "KEY_F3",
+        _Qt.Key.Key_F4: "KEY_F4",
+        _Qt.Key.Key_F5: "KEY_F5",
+        _Qt.Key.Key_F6: "KEY_F6",
+        _Qt.Key.Key_F7: "KEY_F7",
+        _Qt.Key.Key_F8: "KEY_F8",
+        _Qt.Key.Key_F9: "KEY_F9",
+        _Qt.Key.Key_F10: "KEY_F10",
+        _Qt.Key.Key_F11: "KEY_F11",
+        _Qt.Key.Key_F12: "KEY_F12",
+        _Qt.Key.Key_F13: "KEY_F13",
+        _Qt.Key.Key_F14: "KEY_F14",
+        _Qt.Key.Key_F15: "KEY_F15",
+        _Qt.Key.Key_F16: "KEY_F16",
         _Qt.Key.Key_Space: "KEY_SPACE",
         _Qt.Key.Key_CapsLock: "KEY_CAPSLOCK",
         _Qt.Key.Key_Tab: "KEY_TAB",
@@ -381,7 +387,6 @@ class SettingsPage(ScrollArea):
         tray_layout.addWidget(self._show_tray_switch)
         self._layout.addWidget(self._tray_card)
 
-
     # ---- Actions ----
 
     def _create_actions(self) -> None:
@@ -484,7 +489,6 @@ class SettingsPage(ScrollArea):
         _map = {"System": Theme.AUTO, "Dark": Theme.DARK, "Light": Theme.LIGHT}
         setTheme(_map.get(text, Theme.AUTO))
 
-
     def _on_bind_ptt_key(self) -> None:
         """Start PTT key binding process."""
         method = self._config.ptt.shortcut_method
@@ -495,6 +499,7 @@ class SettingsPage(ScrollArea):
             self._ptt_key_btn.setText("Waiting for portal...")
             try:
                 from voxlink.shortcuts.portal import PortalShortcuts
+
                 if PortalShortcuts.is_available():
                     # The portal will show its own dialog
                     # We need to restart the shortcut manager to trigger BindShortcuts
@@ -520,9 +525,11 @@ class SettingsPage(ScrollArea):
     def eventFilter(self, obj, event) -> bool:
         """Capture key press for PTT binding."""
         from PySide6.QtCore import QEvent
-        if hasattr(self, '_waiting_for_key') and self._waiting_for_key:
+
+        if hasattr(self, "_waiting_for_key") and self._waiting_for_key:
             if event.type() == QEvent.Type.KeyPress:
                 from PySide6.QtCore import Qt as _Qt
+
                 key = event.key()
                 if key in (_Qt.Key.Key_Escape,):
                     # Cancel binding
@@ -545,6 +552,7 @@ class SettingsPage(ScrollArea):
     def _on_test_audio(self) -> None:
         """Record 2 seconds from input and play back through output."""
         import threading
+
         from voxlink.audio.capture import FRAME_BYTES, RATE
 
         self._test_btn.setEnabled(False)
@@ -556,10 +564,10 @@ class SettingsPage(ScrollArea):
         def _run_test() -> None:
             try:
                 from pasimple import (
-                    PaSimple,
-                    PA_STREAM_RECORD,
-                    PA_STREAM_PLAYBACK,
                     PA_SAMPLE_S16LE,
+                    PA_STREAM_PLAYBACK,
+                    PA_STREAM_RECORD,
+                    PaSimple,
                 )
 
                 # Record 2 seconds

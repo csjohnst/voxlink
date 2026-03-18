@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QSettings, Qt, QTimer
@@ -238,13 +239,18 @@ class MainWindow(FluentWindow):
         """Store reference to tray icon for minimize-to-tray behavior."""
         self._tray_icon = tray_icon
 
+    def _log(self, message: str) -> None:
+        """Append a timestamped message to the server info area."""
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._log(f"[{ts}] {message}")
+
     # ---- Slots: connection events ----
 
     def on_connected(self) -> None:
         """Handle successful server connection."""
         self.setWindowTitle("VoxLink — Connected")
         self._server_page.status_bar.set_connection_status("Connected")
-        self._server_page.info_area.append("Connected to server.")
+        self._log("Connected to server.")
         InfoBar.success(
             "Connected",
             "Successfully connected to server",
@@ -271,14 +277,14 @@ class MainWindow(FluentWindow):
         self._server_page.status_bar.set_connection_status("Disconnected")
         self._server_page.channel_tree.clear()
         self._server_page.channel_tree.setHeaderLabel("Channels")
-        self._server_page.info_area.append("Disconnected from server.")
+        self._log("Disconnected from server.")
         self._compact_overlay.clear_users()
 
     def on_error(self, message: str) -> None:
         """Handle connection error."""
         logger.error("Connection error: %s", message)
         self._server_page.status_bar.set_connection_status(f"Error: {message}")
-        self._server_page.info_area.append(f"Error: {message}")
+        self._log(f"Error: {message}")
         InfoBar.error(
             "Error",
             message,
@@ -295,7 +301,7 @@ class MainWindow(FluentWindow):
         """Handle user joining."""
         name = user_data.get("name", "Unknown")
         session = user_data.get("session")
-        self._server_page.info_area.append(f"User joined: {name}")
+        self._log(f"User joined: {name}")
         self._refresh_tree()
         if session is not None:
             self._compact_overlay.add_user(session, name)
@@ -304,7 +310,7 @@ class MainWindow(FluentWindow):
         """Handle user leaving."""
         name = user_data.get("name", "Unknown")
         session = user_data.get("session")
-        self._server_page.info_area.append(f"User left: {name}")
+        self._log(f"User left: {name}")
         self._server_page.channel_tree.remove_user(user_data)
         if session is not None:
             self._compact_overlay.remove_user(session)
@@ -323,7 +329,7 @@ class MainWindow(FluentWindow):
             port = dlg.port_spin.value()
             username = dlg.username_edit.text().strip()
             if host and username:
-                self._server_page.info_area.append(f"Connecting to {host}:{port} as {username}...")
+                self._log(f"Connecting to {host}:{port} as {username}...")
                 self._server_page.status_bar.set_connection_status("Connecting...")
                 self._mumble_client.connect_to_server(host, port, username)
 

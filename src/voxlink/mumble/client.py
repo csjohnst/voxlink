@@ -329,9 +329,10 @@ class MumbleClient(QObject):
     audio_received = Signal(bytes)
     audio_received_from_user = Signal(int, bytes)  # session_id, pcm_data
 
-    # Auto-reconnect settings
+    # Auto-reconnect settings — server bans after 10 connections in 120s,
+    # so backoff must stay well under that limit (1, 2, 4, 8, 16, 32, 60…).
     _RECONNECT_BASE = 1.0  # seconds
-    _RECONNECT_MAX = 30.0  # seconds
+    _RECONNECT_MAX = 60.0  # seconds
 
     def __init__(self, config: ServerConfig, parent: QObject | None = None) -> None:
         super().__init__(parent)

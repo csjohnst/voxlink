@@ -93,9 +93,7 @@ def run_app(config_path: str | None = None) -> int:
         "none": "PTT (none)",
     }
     shortcut_manager.method_changed.connect(
-        lambda m: main_window._server_page.info_area.append(
-            f"Shortcut method: {_METHOD_LABELS.get(m, m)}"
-        )
+        lambda m: main_window._log(f"Shortcut method: {_METHOD_LABELS.get(m, m)}")
     )
 
     # Wire capture level to status bar input meter

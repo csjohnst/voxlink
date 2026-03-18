@@ -242,7 +242,7 @@ class MainWindow(FluentWindow):
     def _log(self, message: str) -> None:
         """Append a timestamped message to the server info area."""
         ts = datetime.now().strftime("%H:%M:%S")
-        self._log(f"[{ts}] {message}")
+        self._server_page.info_area.append(f"[{ts}]  {message}")
 
     # ---- Slots: connection events ----
 

@@ -378,11 +378,15 @@ class MainWindow(FluentWindow):
         if muted:
             self._capture_manager.stop()
         # Don't auto-start capture on unmute - PTT controls that
+        self._mumble_client.set_self_mute(muted)
         logger.info("Mute %s", "enabled" if muted else "disabled")
 
     def _on_deafen_toggled(self, deafened: bool) -> None:
         self._is_deafened = deafened
-        # Store the deafen state; the app.py audio_received handler checks it
+        self._mumble_client.set_self_deaf(deafened)
+        if not deafened:
+            # Undeafen should also unmute on the server
+            self._mumble_client.set_self_mute(self._is_muted)
         logger.info("Deafen %s", "enabled" if deafened else "disabled")
 
     def _restore_geometry(self) -> None:

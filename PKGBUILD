@@ -1,6 +1,6 @@
 # Maintainer: Chris Johnston
 pkgname=voxlink
-pkgver=0.1.4
+pkgver=0.1.5
 pkgrel=1
 pkgdesc="Wayland-native Mumble voice chat client"
 arch=('x86_64')

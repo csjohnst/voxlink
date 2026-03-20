@@ -617,6 +617,29 @@ class MumbleClient(QObject):
         except Exception:
             logger.exception("Failed to send audio")
 
+    def set_self_mute(self, muted: bool) -> None:
+        """Send self-mute state to the server."""
+        if self._mumble is None or self._state != ConnectionState.CONNECTED:
+            return
+        try:
+            self._mumble.users.myself.self_mute = muted
+            logger.info("Set self_mute=%s on server", muted)
+        except Exception:
+            logger.exception("Failed to set self_mute")
+
+    def set_self_deaf(self, deafened: bool) -> None:
+        """Send self-deaf state to the server."""
+        if self._mumble is None or self._state != ConnectionState.CONNECTED:
+            return
+        try:
+            self._mumble.users.myself.self_deaf = deafened
+            if deafened:
+                # Deafen implies mute in Mumble protocol
+                self._mumble.users.myself.self_mute = True
+            logger.info("Set self_deaf=%s on server", deafened)
+        except Exception:
+            logger.exception("Failed to set self_deaf")
+
     def join_channel(self, channel_id: int) -> None:
         """Join a channel by ID."""
         if self._mumble is None or self._state != ConnectionState.CONNECTED:

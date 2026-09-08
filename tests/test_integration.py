@@ -1,20 +1,23 @@
 """Integration tests for VoxLink (headless/offscreen)."""
+
 import os
+
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 import pytest
 from PySide6.QtWidgets import QApplication
-from voxlink.config import VoxLinkConfig
-from voxlink.audio.devices import DeviceManager, AudioDevice
+
 from voxlink.audio.capture import CaptureManager
+from voxlink.audio.devices import DeviceManager
 from voxlink.audio.playback import PlaybackManager
-from voxlink.mumble.client import MumbleClient, ConnectionState
+from voxlink.config import VoxLinkConfig
+from voxlink.mumble.client import ConnectionState, MumbleClient
 from voxlink.shortcuts.manager import ShortcutManager
-from voxlink.ui.main_window import MainWindow
-from voxlink.ui.status_bar import StatusBar, AudioLevelMeter
 from voxlink.ui.channel_tree import ChannelTree
-from voxlink.ui.tray import TrayIcon
+from voxlink.ui.main_window import MainWindow
 from voxlink.ui.settings import SettingsPage
+from voxlink.ui.status_bar import AudioLevelMeter, StatusBar
+from voxlink.ui.tray import TrayIcon
 
 
 @pytest.fixture(scope="session")
@@ -42,8 +45,14 @@ def managers(config):
 
 def test_main_window_creation(qapp, config, managers):
     dm, cm, pm, mc, sm = managers
-    window = MainWindow(config=config, device_manager=dm, capture_manager=cm,
-                       playback_manager=pm, mumble_client=mc, shortcut_manager=sm)
+    window = MainWindow(
+        config=config,
+        device_manager=dm,
+        capture_manager=cm,
+        playback_manager=pm,
+        mumble_client=mc,
+        shortcut_manager=sm,
+    )
     assert window.windowTitle().startswith("VoxLink")
     assert window.minimumWidth() >= 600
     assert window.minimumHeight() >= 400
@@ -74,8 +83,14 @@ def test_channel_tree_update(qapp):
 
 def test_tray_icon_creation(qapp, config, managers):
     dm, cm, pm, mc, sm = managers
-    window = MainWindow(config=config, device_manager=dm, capture_manager=cm,
-                       playback_manager=pm, mumble_client=mc, shortcut_manager=sm)
+    window = MainWindow(
+        config=config,
+        device_manager=dm,
+        capture_manager=cm,
+        playback_manager=pm,
+        mumble_client=mc,
+        shortcut_manager=sm,
+    )
     tray = TrayIcon(window, config.ui)
     tray.set_connected()
     tray.set_disconnected()

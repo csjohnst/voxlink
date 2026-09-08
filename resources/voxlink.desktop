@@ -5,6 +5,6 @@ Comment=Wayland-native Mumble voice chat client
 Exec=voxlink
 Icon=voxlink
 Terminal=false
-Categories=Network;Audio;Chat;
+Categories=Network;Chat;
 Keywords=mumble;voice;chat;voip;
 StartupWMClass=voxlink

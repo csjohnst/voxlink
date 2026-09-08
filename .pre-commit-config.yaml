@@ -9,8 +9,8 @@ repos:
   - repo: local
     hooks:
       - id: version-sync
-        name: Check version sync (pyproject.toml ↔ PKGBUILD)
+        name: Check version sync (pyproject.toml ↔ PKGBUILD ↔ __init__.py)
         entry: scripts/check-version-sync.sh
         language: script
-        files: (pyproject\.toml|PKGBUILD)
+        files: (pyproject\.toml|PKGBUILD|src/voxlink/__init__\.py)
         pass_filenames: false

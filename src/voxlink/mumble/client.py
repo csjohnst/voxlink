@@ -659,6 +659,27 @@ class MumbleClient(QObject):
         except Exception:
             logger.exception("Failed to join channel %d", channel_id)
 
+    def move_user(self, session: int, channel_id: int) -> None:
+        """Ask the server to move another user into a channel (needs Move permission)."""
+        if self._mumble is None or self._state != ConnectionState.CONNECTED:
+            logger.warning("Cannot move user: not connected")
+            return
+        try:
+            self._mumble.channels[channel_id].move_in(session)
+        except KeyError:
+            logger.error("Channel %d not found", channel_id)
+        except Exception:
+            logger.exception("Failed to move session %d to channel %d", session, channel_id)
+
+    def get_my_session(self) -> int | None:
+        """Session id of the local user, or None when not connected."""
+        if self._mumble is None or self._state != ConnectionState.CONNECTED:
+            return None
+        try:
+            return self._mumble.users.my_session
+        except Exception:
+            return None
+
     def get_channels(self) -> dict:
         """Return the current channel tree as a dict of {id: channel_info}.
 

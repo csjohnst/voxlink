@@ -6,8 +6,8 @@ import logging
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPixmap
-from PySide6.QtWidgets import QTreeWidgetItem
+from PySide6.QtGui import QBrush, QColor, QDragMoveEvent, QDropEvent, QIcon, QPainter, QPixmap
+from PySide6.QtWidgets import QAbstractItemView, QTreeWidgetItem
 from qfluentwidgets import (
     Action,
     BodyLabel,
@@ -30,6 +30,16 @@ _ROLE_TYPE = Qt.ItemDataRole.UserRole + 1
 
 _TYPE_CHANNEL = "channel"
 _TYPE_USER = "user"
+
+
+def _channel_flags(flags: Qt.ItemFlag) -> Qt.ItemFlag:
+    """Channels accept drops but cannot be dragged."""
+    return (flags | Qt.ItemFlag.ItemIsDropEnabled) & ~Qt.ItemFlag.ItemIsDragEnabled
+
+
+def _user_flags(flags: Qt.ItemFlag) -> Qt.ItemFlag:
+    """Users can be dragged; dropping onto a user targets that user's channel."""
+    return flags | Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled
 
 
 def _circle_icon(color: QColor, size: int = 14) -> QIcon:
@@ -86,9 +96,14 @@ class ChannelTree(TreeWidget):
     Channels are top-level items; users are children of their
     current channel. Icons indicate user state (talking, muted, deafened).
     Uses Fluent Design TreeWidget with RoundMenu context menus.
+
+    Moving between channels: drag your own name onto a channel (or onto a
+    user inside it), or double-click the channel. Dragging another user onto
+    a channel requests a server-side move of that user (needs Move permission).
     """
 
     channel_join_requested = Signal(int)
+    user_move_requested = Signal(int, int)  # session_id, channel_id
     user_mute_toggled = Signal(int, bool)  # session_id, muted
     user_volume_changed = Signal(int, float)  # session_id, volume (0.0-2.0)
 
@@ -100,6 +115,15 @@ class ChannelTree(TreeWidget):
         self.itemDoubleClicked.connect(self._on_item_double_clicked)
         self.setAnimated(True)
         self.setIndentation(16)
+        # Drag-and-drop: users are draggable, channels (and users, resolving to
+        # their channel) accept drops. dropEvent is overridden so Qt never
+        # re-parents items itself; the server's UserState update does that.
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self._my_session: int | None = None
         self._muted_sessions: set[int] = set()
         self._user_volumes: dict[int, float] = {}  # session -> volume multiplier
         self._talking_sessions: set[int] = set()
@@ -134,6 +158,7 @@ class ChannelTree(TreeWidget):
             item.setIcon(0, _ICON_CHANNEL)  # type: ignore[arg-type]
             item.setData(0, _ROLE_ID, cid)
             item.setData(0, _ROLE_TYPE, _TYPE_CHANNEL)
+            item.setFlags(_channel_flags(item.flags()))
             item.setExpanded(True)
             channel_items[cid] = item
 
@@ -154,12 +179,7 @@ class ChannelTree(TreeWidget):
             for user_data in users.values():
                 channel_id = user_data.get("channel_id")
                 if channel_id is not None and channel_id in channel_items:
-                    user_item = QTreeWidgetItem()
-                    user_item.setText(0, user_data.get("name", "Unknown"))
-                    user_item.setIcon(0, _user_icon(user_data))
-                    user_item.setData(0, _ROLE_ID, user_data.get("session"))
-                    user_item.setData(0, _ROLE_TYPE, _TYPE_USER)
-                    channel_items[channel_id].addChild(user_item)
+                    channel_items[channel_id].addChild(self._make_user_item(user_data))
 
         self.expandAll()
 
@@ -170,17 +190,33 @@ class ChannelTree(TreeWidget):
         if session is None:
             return
 
-        # Find the user item by session ID
-        root = self.invisibleRootItem()
-        for i in range(root.childCount()):
-            channel_item = root.child(i)
-            if channel_item is None:
-                continue
-            item = self._find_user_in_subtree(channel_item, session)
-            if item is not None:
-                item.setText(0, user_data.get("name", item.text(0)))
-                item.setIcon(0, _user_icon(user_data))
-                return
+        item = self._find_user_item(session)
+        if item is None:
+            # Unknown user (e.g. state arrived before the tree was built)
+            self.add_user(user_data)
+            return
+
+        item.setText(0, user_data.get("name", item.text(0)))
+        item.setIcon(0, _user_icon(user_data))
+        self._style_user_item(item, session)
+
+        # Re-parent when the user changed channel; this is what makes a
+        # channel move visible (the server confirms it via UserState).
+        new_channel = user_data.get("channel_id")
+        if new_channel is None:
+            return
+        current_parent = item.parent()
+        current_channel = current_parent.data(0, _ROLE_ID) if current_parent is not None else None
+        if new_channel == current_channel:
+            return
+        target = self._find_channel_item(new_channel)
+        if target is None:
+            logger.warning("Channel %s not in tree; cannot move %s", new_channel, session)
+            return
+        if current_parent is not None:
+            current_parent.removeChild(item)
+        target.addChild(item)
+        target.setExpanded(True)
 
     def add_user(self, user_data: dict) -> None:
         """Add a user to the appropriate channel."""
@@ -193,12 +229,7 @@ class ChannelTree(TreeWidget):
         if channel_item is None:
             return
 
-        user_item = QTreeWidgetItem()
-        user_item.setText(0, user_data.get("name", "Unknown"))
-        user_item.setIcon(0, _user_icon(user_data))
-        user_item.setData(0, _ROLE_ID, user_data.get("session"))
-        user_item.setData(0, _ROLE_TYPE, _TYPE_USER)
-        channel_item.addChild(user_item)
+        channel_item.addChild(self._make_user_item(user_data))
 
     def remove_user(self, user_data: dict) -> None:
         """Remove a user from the tree."""
@@ -250,6 +281,93 @@ class ChannelTree(TreeWidget):
             if found is not None:
                 return found
         return None
+
+    # ---- Own-user tracking ----
+
+    def set_my_session(self, session: int | None) -> None:
+        """Tell the tree which session is the local user (bolded; drag = join)."""
+        if session == self._my_session:
+            return
+        old = self._my_session
+        self._my_session = session
+        for sid in (old, session):
+            if sid is None:
+                continue
+            item = self._find_user_item(sid)
+            if item is not None:
+                self._style_user_item(item, sid)
+
+    def my_session(self) -> int | None:
+        return self._my_session
+
+    def _make_user_item(self, user_data: dict) -> QTreeWidgetItem:
+        user_item = QTreeWidgetItem()
+        user_item.setText(0, user_data.get("name", "Unknown"))
+        user_item.setIcon(0, _user_icon(user_data))
+        user_item.setData(0, _ROLE_ID, user_data.get("session"))
+        user_item.setData(0, _ROLE_TYPE, _TYPE_USER)
+        user_item.setFlags(_user_flags(user_item.flags()))
+        self._style_user_item(user_item, user_data.get("session"))
+        return user_item
+
+    def _style_user_item(self, item: QTreeWidgetItem, session: int | None) -> None:
+        font = item.font(0)
+        font.setBold(session is not None and session == self._my_session)
+        item.setFont(0, font)
+
+    # ---- Drag and drop ----
+
+    def _channel_id_of_item(self, item: QTreeWidgetItem | None) -> int | None:
+        """Resolve an item to a channel id: channels map to themselves, users to their channel."""
+        if item is None:
+            return None
+        if item.data(0, _ROLE_TYPE) == _TYPE_CHANNEL:
+            return item.data(0, _ROLE_ID)
+        if item.data(0, _ROLE_TYPE) == _TYPE_USER:
+            parent = item.parent()
+            return parent.data(0, _ROLE_ID) if parent is not None else None
+        return None
+
+    def _dragged_item(self) -> QTreeWidgetItem | None:
+        selected = self.selectedItems()
+        return selected[0] if selected else self.currentItem()
+
+    def _handle_drop(self, dragged: QTreeWidgetItem | None, target: QTreeWidgetItem | None) -> bool:
+        """Turn a drop into a join/move request. Returns True if a request was emitted.
+
+        Only user items can be dropped. Dropping onto a user means that user's
+        channel. Dropping onto the channel the user is already in is a no-op.
+        The local user emits channel_join_requested; anyone else emits
+        user_move_requested (the server enforces permission).
+        """
+        if dragged is None or dragged.data(0, _ROLE_TYPE) != _TYPE_USER:
+            return False
+        session = dragged.data(0, _ROLE_ID)
+        target_channel = self._channel_id_of_item(target)
+        if session is None or target_channel is None:
+            return False
+        if target_channel == self._channel_id_of_item(dragged):
+            return False
+        if session == self._my_session:
+            logger.info("Drag: join channel %s", target_channel)
+            self.channel_join_requested.emit(target_channel)
+        else:
+            logger.info("Drag: move session %s to channel %s", session, target_channel)
+            self.user_move_requested.emit(session, target_channel)
+        return True
+
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:  # noqa: N802
+        super().dragMoveEvent(event)
+        target = self.itemAt(event.position().toPoint())
+        if self._channel_id_of_item(target) is None:
+            event.ignore()
+
+    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
+        target = self.itemAt(event.position().toPoint())
+        self._handle_drop(self._dragged_item(), target)
+        # Never let Qt re-parent the item; the server's UserState does that.
+        event.setDropAction(Qt.DropAction.IgnoreAction)
+        event.accept()
 
     def _on_item_double_clicked(self, item: QTreeWidgetItem, column: int) -> None:
         """Handle double-click: join channel if a channel was clicked."""

@@ -52,3 +52,16 @@ def test_cert_fields_round_trip(tmp_path: Path):
     loaded = VoxLinkConfig.load(path)
     assert loaded.server.certfile == "~/.config/voxlink/certs/client.pem"
     assert loaded.server.keyfile == "~/.config/voxlink/certs/client.key"
+
+
+def test_legacy_audio_defaults_off():
+    """Native protobuf audio is the default; legacy is opt-in for old servers."""
+    assert VoxLinkConfig().server.legacy_audio is False
+
+
+def test_legacy_audio_round_trip(tmp_path: Path):
+    path = tmp_path / "config.toml"
+    config = VoxLinkConfig()
+    config.server.legacy_audio = True
+    config.save(path)
+    assert VoxLinkConfig.load(path).server.legacy_audio is True

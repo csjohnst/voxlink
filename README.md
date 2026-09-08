@@ -49,6 +49,13 @@ voxlink --list-devices
 voxlink --test-ptt
 ```
 
+## Moving between channels
+
+Drag your own name onto a channel (or onto someone already in it), or
+double-click the channel. Your name is shown in bold. Dragging another user
+onto a channel asks the server to move them, which needs Move permission
+there.
+
 ## Configuration
 
 Config is stored at `~/.config/voxlink/config.toml`. A default config is created on first run.

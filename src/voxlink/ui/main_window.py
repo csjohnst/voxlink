@@ -160,6 +160,7 @@ class MainWindow(FluentWindow):
         # Create pages
         self._server_page = ServerPage()
         self._server_page.channel_tree.channel_join_requested.connect(self._on_join_channel)
+        self._server_page.channel_tree.user_move_requested.connect(self._on_move_user)
         self._server_page.status_bar.mute_toggled.connect(self._on_mute_toggled)
         self._server_page.status_bar.deafen_toggled.connect(self._on_deafen_toggled)
 
@@ -266,6 +267,7 @@ class MainWindow(FluentWindow):
         """Rebuild the channel tree from the current server state."""
         channels = self._mumble_client.get_channels()
         users = self._mumble_client.get_users()
+        self._server_page.channel_tree.set_my_session(self._mumble_client.get_my_session())
         logger.info("Refreshing tree: %d channels, %d users", len(channels), len(users))
         logger.debug("Channels: %s", channels)
         logger.debug("Users: %s", users)
@@ -274,6 +276,7 @@ class MainWindow(FluentWindow):
     def on_disconnected(self) -> None:
         """Handle server disconnection."""
         self.setWindowTitle("VoxLink — Disconnected")
+        self._server_page.channel_tree.set_my_session(None)
         self._server_page.status_bar.set_connection_status("Disconnected")
         self._server_page.channel_tree.clear()
         self._server_page.channel_tree.setHeaderLabel("Channels")
@@ -348,6 +351,10 @@ class MainWindow(FluentWindow):
 
     def _on_join_channel(self, channel_id: int) -> None:
         self._mumble_client.join_channel(channel_id)
+
+    def _on_move_user(self, session: int, channel_id: int) -> None:
+        self._log(f"Moving user {session} to channel {channel_id}...")
+        self._mumble_client.move_user(session, channel_id)
 
     def _toggle_mute(self) -> None:
         self._is_muted = not self._is_muted

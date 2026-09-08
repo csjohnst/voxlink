@@ -8,6 +8,7 @@ import struct
 import sys
 import threading
 import time
+from pathlib import Path
 
 import mumble as pymumble
 from mumble.constants import UDP_MSG_TYPE
@@ -385,10 +386,15 @@ class MumbleClient(QObject):
         self._set_state(ConnectionState.CONNECTING)
 
         try:
+            certfile, keyfile = resolve_cert_paths(self._config.certfile, self._config.keyfile)
+            if certfile:
+                logger.info("Using client certificate %s", certfile)
             self._mumble = pymumble.Mumble(
                 host=resolved_host,
                 user=resolved_user,
                 port=resolved_port,
+                certfile=certfile,
+                keyfile=keyfile,
                 reconnect=False,  # we handle reconnect ourselves
                 force_tcp_only=True,
             )
@@ -686,19 +692,50 @@ class MumbleClient(QObject):
         return result
 
 
-def test_connection_cli(host: str, port: int, username: str) -> int:
+def resolve_cert_paths(certfile: str | None, keyfile: str | None) -> tuple[str | None, str | None]:
+    """Expand and validate client certificate paths for pymumble.
+
+    Returns (None, None) when no certfile is configured. If a certfile is set
+    but missing on disk, logs an error and returns (None, None) so the
+    connection attempt proceeds without a certificate rather than crashing.
+    """
+    if not certfile:
+        return None, None
+    cert = str(Path(certfile).expanduser())
+    key = str(Path(keyfile).expanduser()) if keyfile else None
+    if not Path(cert).is_file():
+        logger.error("Client certificate not found: %s (connecting without it)", cert)
+        return None, None
+    if key and not Path(key).is_file():
+        logger.error("Client key not found: %s (connecting without certificate)", key)
+        return None, None
+    return cert, key
+
+
+def test_connection_cli(
+    host: str,
+    port: int,
+    username: str,
+    certfile: str | None = None,
+    keyfile: str | None = None,
+) -> int:
     """CLI command to test server connection and exit.
 
-    Connects to the given Mumble server, prints channels and users,
-    then disconnects. Returns 0 on success, 1 on failure.
+    Connects to the given Mumble server (presenting a client certificate if
+    given), prints channels and users, then disconnects.
+    Returns 0 on success, 1 on failure.
     """
-    print(f"Connecting to {host}:{port} as '{username}'...")
+    certfile, keyfile = resolve_cert_paths(certfile, keyfile)
+    cert_note = f" with certificate {certfile}" if certfile else " (no client certificate)"
+    print(f"Connecting to {host}:{port} as '{username}'{cert_note}...")
 
     try:
         m = pymumble.Mumble(
             host=host,
             user=username,
             port=port,
+            certfile=certfile,
+            keyfile=keyfile,
             reconnect=False,
             force_tcp_only=True,
         )
@@ -706,6 +743,18 @@ def test_connection_cli(host: str, port: int, username: str) -> int:
         m.start()
 
         connected = m.wait_until_connected(timeout=10)
+        if connected:
+            # pymumble releases ready_lock on rejection too; check real state.
+            from mumble.constants import CONN_STATE
+
+            time.sleep(0.1)
+            if m.connected != CONN_STATE.CONNECTED or not m.is_alive():
+                print(
+                    "ERROR: Connection rejected by server "
+                    "(commonly 'Wrong certificate or password for existing user' — "
+                    "the username is registered to a different client certificate)."
+                )
+                return 1
         if not connected:
             print("ERROR: Connection timed out after 10 seconds.")
             try:

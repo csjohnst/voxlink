@@ -15,9 +15,7 @@ def parse_args() -> argparse.Namespace:
         prog="voxlink",
         description="VoxLink — Wayland-native Mumble voice chat client",
     )
-    parser.add_argument(
-        "--version", action="version", version=f"VoxLink {__version__}"
-    )
+    parser.add_argument("--version", action="version", version=f"VoxLink {__version__}")
     parser.add_argument(
         "--test-connection",
         action="store_true",
@@ -26,6 +24,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--server", type=str, help="Mumble server hostname")
     parser.add_argument("--user", type=str, help="Username for server connection")
     parser.add_argument("--port", type=int, default=64738, help="Server port")
+    parser.add_argument(
+        "--cert",
+        type=str,
+        help="Client certificate (PEM) for --test-connection; defaults to config certfile",
+    )
+    parser.add_argument(
+        "--key",
+        type=str,
+        help="Private key (PEM) for --cert; defaults to config keyfile",
+    )
     parser.add_argument(
         "--list-devices",
         action="store_true",
@@ -41,9 +49,7 @@ def parse_args() -> argparse.Namespace:
         type=str,
         help="Path to config file",
     )
-    parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Enable verbose logging"
-    )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     return parser.parse_args()
 
 
@@ -72,9 +78,15 @@ def main() -> int:
         if not args.server or not args.user:
             logger.error("--test-connection requires --server and --user")
             return 1
+        from pathlib import Path
+
+        from voxlink.config import VoxLinkConfig
         from voxlink.mumble.client import test_connection_cli
 
-        return test_connection_cli(args.server, args.port, args.user)
+        cfg = VoxLinkConfig.load(Path(args.config) if args.config else None)
+        certfile = args.cert or cfg.server.certfile or None
+        keyfile = args.key or cfg.server.keyfile or None
+        return test_connection_cli(args.server, args.port, args.user, certfile, keyfile)
 
     if args.test_ptt:
         from voxlink.shortcuts.manager import test_ptt_cli

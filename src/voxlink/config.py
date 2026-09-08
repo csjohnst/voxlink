@@ -24,6 +24,10 @@ class ServerConfig:
     port: int = 64738
     username: str = "VoxLinkUser"
     auto_connect: bool = False
+    # Client certificate (PEM) for servers that register usernames against a cert.
+    # Both are paths; "~" is expanded. Leave empty to connect without a certificate.
+    certfile: str = ""
+    keyfile: str = ""
 
 
 @dataclass

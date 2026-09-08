@@ -53,6 +53,30 @@ voxlink --test-ptt
 
 Config is stored at `~/.config/voxlink/config.toml`. A default config is created on first run.
 
+### Client certificates
+
+Mumble servers register usernames against a client certificate. If a server
+rejects you with "Wrong certificate or password for existing user", point
+VoxLink at the same certificate your Mumble desktop client uses:
+
+```toml
+[server]
+certfile = "~/.config/voxlink/certs/client.pem"
+keyfile = "~/.config/voxlink/certs/client.key"
+```
+
+Mumble exports certificates as PKCS#12 (`.p12`, usually with an empty
+passphrase). Convert to the PEM pair pymumble expects:
+
+```bash
+openssl pkcs12 -in cert.p12 -legacy -passin pass: -clcerts -nokeys -out client.pem
+openssl pkcs12 -in cert.p12 -legacy -passin pass: -nocerts -nodes -out client.key
+chmod 600 client.pem client.key
+```
+
+Verify with `voxlink --test-connection --server HOST --user NAME` (it reads the
+certificate from the config, or pass `--cert`/`--key` explicitly).
+
 ## Development
 
 ```bash

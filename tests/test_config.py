@@ -1,6 +1,7 @@
 """Tests for VoxLink configuration loading and saving."""
 
 from pathlib import Path
+
 from voxlink.config import VoxLinkConfig
 
 
@@ -31,3 +32,23 @@ def test_save_and_load(tmp_path: Path):
     loaded = VoxLinkConfig.load(path)
     assert loaded.server.host == "test.example.com"
     assert loaded.audio.input_volume == 50
+
+
+def test_cert_fields_default_empty():
+    """Certificate paths default to empty (no client certificate)."""
+    config = VoxLinkConfig()
+    assert config.server.certfile == ""
+    assert config.server.keyfile == ""
+
+
+def test_cert_fields_round_trip(tmp_path: Path):
+    """Certificate paths survive save/load."""
+    path = tmp_path / "config.toml"
+    config = VoxLinkConfig()
+    config.server.certfile = "~/.config/voxlink/certs/client.pem"
+    config.server.keyfile = "~/.config/voxlink/certs/client.key"
+    config.save(path)
+
+    loaded = VoxLinkConfig.load(path)
+    assert loaded.server.certfile == "~/.config/voxlink/certs/client.pem"
+    assert loaded.server.keyfile == "~/.config/voxlink/certs/client.key"

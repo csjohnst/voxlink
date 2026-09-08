@@ -461,9 +461,14 @@ class MumbleClient(QObject):
                         sa.encoder,
                         sa.encoder_framesize,
                     )
-                    # Patch send_audio to use legacy format for older servers
-                    _patch_send_audio(self._mumble)
-                    logger.info("Applied legacy send audio patch")
+                    # Pre-1.5 servers only understand the legacy audio packet
+                    # format; 1.5+ servers use the fork's native protobuf send
+                    # and silently drop legacy packets. Default to native.
+                    if self._config.legacy_audio:
+                        _patch_send_audio(self._mumble)
+                        logger.info("Applied legacy send audio patch (pre-1.5 server)")
+                    else:
+                        logger.info("Using native protobuf audio send")
                 else:
                     logger.warning("send_audio is None — audio disabled")
                 self.events.emit_connected()

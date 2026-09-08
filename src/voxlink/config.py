@@ -28,6 +28,11 @@ class ServerConfig:
     # Both are paths; "~" is expanded. Leave empty to connect without a certificate.
     certfile: str = ""
     keyfile: str = ""
+    # Force the pre-1.5 legacy audio packet format. Only needed for Mumble
+    # servers older than 1.5; modern servers (official Docker image, 1.5+)
+    # use protobuf audio and silently drop legacy packets, so your voice
+    # would not be heard. Leave false unless you run a pre-1.5 server.
+    legacy_audio: bool = False
 
 
 @dataclass

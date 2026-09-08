@@ -53,6 +53,17 @@ voxlink --test-ptt
 
 Config is stored at `~/.config/voxlink/config.toml`. A default config is created on first run.
 
+### Older servers (pre-1.5 audio)
+
+Modern Mumble servers (the official Docker image, 1.5 and later) use the
+protobuf audio format, which VoxLink sends by default. If you connect to a
+server older than 1.5 and others cannot hear you, force the legacy format:
+
+```toml
+[server]
+legacy_audio = true
+```
+
 ### Client certificates
 
 Mumble servers register usernames against a client certificate. If a server

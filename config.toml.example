@@ -3,6 +3,13 @@ host = "mumble.example.com"
 port = 64738
 username = "chris"
 # password stored in system keyring, not plaintext
+# Client certificate (PEM). Required when the server has registered your username
+# against a certificate (reject reason: "Wrong certificate or password for existing user").
+# Export from Mumble desktop: Configure > Certificate Wizard > Export, then
+#   openssl pkcs12 -in cert.p12 -legacy -passin pass: -clcerts -nokeys -out client.pem
+#   openssl pkcs12 -in cert.p12 -legacy -passin pass: -nocerts -nodes -out client.key
+certfile = ""               # e.g. "~/.config/voxlink/certs/client.pem"
+keyfile = ""                # e.g. "~/.config/voxlink/certs/client.key"
 
 [audio]
 input_device = ""           # PipeWire device name (leave empty for default)
